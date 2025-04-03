@@ -23,6 +23,31 @@ class FirebaseAdminApp {
   @internal
   String tasksEmulatorHost = 'https://cloudfunctions.googleapis.com/';
 
+  grpc.ClientChannel? _firestoreChannel;
+
+  grpc.ClientChannel get firestoreChannel {
+    return _firestoreChannel ??= grpc.ClientChannel(
+      firestoreApiHost.host,
+      port: firestoreApiHost.port,
+      options: grpc.ChannelOptions(
+        credentials: isUsingEmulator
+            ? const grpc.ChannelCredentials.insecure()
+            : const grpc.ChannelCredentials.secure(),
+      ),
+    );
+  }
+
+  grpc.ServiceAccountAuthenticator? _authenticator;
+
+  grpc.ServiceAccountAuthenticator? get authenticator {
+    return _authenticator ??= credential.authenticatorFor(
+      [
+        auth3.IdentityToolkitApi.cloudPlatformScope,
+        auth3.IdentityToolkitApi.firebaseScope,
+      ],
+    );
+  }
+
   /// Use the Firebase Emulator Suite to run the app locally.
   void useEmulator() {
     _isUsingEmulator = true;
@@ -73,5 +98,6 @@ class FirebaseAdminApp {
   Future<void> close() async {
     final client = await this.client;
     client.close();
+    await _firestoreChannel?.shutdown();
   }
 }

@@ -15,11 +15,11 @@ class _Serializer {
 
   final Firestore firestore;
 
-  Object _createInteger(String n) {
+  Object _createInteger(fixnum.Int64 n) {
     if (firestore._settings.useBigInt ?? false) {
-      return BigInt.parse(n);
+      return BigInt.parse(n.toString());
     } else {
-      return int.parse(n);
+      return n.toInt();
     }
   }
 
@@ -45,8 +45,11 @@ class _Serializer {
         return firestore1.Value(booleanValue: value);
 
       case int():
+        return firestore1.Value(integerValue: fixnum.Int64(value));
       case BigInt():
-        return firestore1.Value(integerValue: value.toString());
+        return firestore1.Value(
+          integerValue: fixnum.Int64.parseInt(value.toString()),
+        );
 
       case double():
         return firestore1.Value(doubleValue: value);
@@ -57,7 +60,7 @@ class _Serializer {
 
       case null:
         return firestore1.Value(
-          nullValue: 'NULL_VALUE',
+          nullValue: google_protobuf.NullValue.NULL_VALUE,
         );
 
       case _Serializable():
@@ -78,7 +81,7 @@ class _Serializer {
         }
 
         final fields = encodeFields(Map.from(value));
-        if (fields.fields!.isEmpty) return null;
+        if (fields.fields.isEmpty) return null;
 
         return firestore1.Value(mapValue: fields);
 
@@ -102,46 +105,43 @@ class _Serializer {
     }
     _assertValidProtobufValue(proto);
 
-    switch (proto) {
-      case firestore1.Value(:final stringValue?):
-        return stringValue;
-      case firestore1.Value(:final booleanValue?):
-        return booleanValue;
-      case firestore1.Value(:final integerValue?):
-        return _createInteger(integerValue);
-      case firestore1.Value(:final doubleValue?):
-        return doubleValue;
-      case firestore1.Value(:final timestampValue?):
-        return Timestamp._fromString(timestampValue);
-      case firestore1.Value(:final referenceValue?):
-        final reosucePath = _QualifiedResourcePath.fromSlashSeparatedString(
-          referenceValue,
-        );
-        return firestore.doc(reosucePath.relativeName);
-      case firestore1.Value(:final arrayValue?):
-        final values = arrayValue.values;
-        return <Object?>[
-          if (values != null)
-            for (final value in values) decodeValue(value),
-        ];
-      case firestore1.Value(nullValue: != null):
-        return null;
-      case firestore1.Value(:final mapValue?):
-        final fields = mapValue.fields;
-        return <String, Object?>{
-          if (fields != null)
-            for (final entry in fields.entries)
-              entry.key: decodeValue(entry.value),
-        };
-      case firestore1.Value(:final geoPointValue?):
-        return GeoPoint._fromProto(geoPointValue);
-
-      default:
-        throw ArgumentError.value(
-          proto,
-          'proto',
-          'Cannot decode type from Firestore Value: ${proto.runtimeType}',
-        );
+    if (proto.hasBooleanValue()) {
+      return proto.booleanValue;
+    } else if (proto.hasIntegerValue()) {
+      return _createInteger(proto.integerValue);
+    } else if (proto.hasDoubleValue()) {
+      return proto.doubleValue;
+    } else if (proto.hasReferenceValue()) {
+      final resourcePath = _QualifiedResourcePath.fromSlashSeparatedString(
+        proto.referenceValue,
+      );
+      return firestore.doc(resourcePath.relativeName);
+    } else if (proto.hasMapValue()) {
+      final fields = proto.mapValue.fields;
+      return {
+        for (final entry in fields.entries) entry.key: decodeValue(entry.value),
+      };
+    } else if (proto.hasGeoPointValue()) {
+      return GeoPoint._fromProto(proto.geoPointValue);
+    } else if (proto.hasArrayValue()) {
+      final values = proto.arrayValue.values;
+      return [
+        for (final value in values) decodeValue(value),
+      ];
+    } else if (proto.hasTimestampValue()) {
+      return Timestamp._fromProtoTimestamp(proto.timestampValue);
+    } else if (proto.hasNullValue()) {
+      return null;
+    } else if (proto.hasStringValue()) {
+      return proto.stringValue;
+    } else if (proto.hasBytesValue()) {
+      return proto.bytesValue;
+    } else {
+      throw ArgumentError.value(
+        proto,
+        'proto',
+        'Cannot decode type from Firestore Value: ${proto.runtimeType}',
+      );
     }
   }
 }

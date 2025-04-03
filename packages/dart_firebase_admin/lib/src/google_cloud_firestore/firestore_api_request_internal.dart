@@ -37,6 +37,7 @@ String? _getErrorMessage(Object? response) {
 
 /// Creates a new FirebaseFirestoreAdminException by extracting the error code, message and other relevant
 /// details from an HTTP error response.
+// ignore: unused_element
 FirebaseFirestoreAdminException _createFirebaseError({
   required String body,
   required int? statusCode,

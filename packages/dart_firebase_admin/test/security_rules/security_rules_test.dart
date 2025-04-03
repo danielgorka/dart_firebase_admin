@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:dart_firebase_admin/security_rules.dart';
 import 'package:test/test.dart';
 
@@ -14,10 +16,15 @@ void main() {
     securityRules = SecurityRules(sdk);
   });
 
+  final hasGoogleEnv =
+      Platform.environment['GOOGLE_APPLICATION_CREDENTIALS'] != null;
+
   const simpleFirestoreContent =
       'service cloud.firestore { match /databases/{database}/documents { match /{document=**} { allow read, write: if false; } } }';
 
-  group('SecurityRules', () {
+  group(
+      skip: hasGoogleEnv ? false : 'Requires GOOGLE_APPLICATION_CREDENTIALS',
+      'SecurityRules', () {
     test('ruleset e2e', () async {
       final ruleset = await securityRules.createRuleset(
         RulesFile(

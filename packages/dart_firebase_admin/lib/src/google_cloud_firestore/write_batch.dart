@@ -62,12 +62,11 @@ class WriteBatch {
 
     firestore1.Write op() {
       final document = DocumentSnapshot._fromObject(ref, firestoreData);
-      final write = document._toWriteProto();
-      if (transform.transforms.isNotEmpty) {
-        write.updateTransforms = transform.toProto(firestore._serializer);
-      }
-      write.currentDocument = precondition._toProto();
-      return write;
+      return document._toWriteProto(
+        transform: transform,
+        serializer: firestore._serializer,
+        precondition: precondition,
+      );
     }
 
     _operations.add((docPath: ref.path, op: op));
@@ -88,35 +87,32 @@ class WriteBatch {
   ///   console.log('Successfully executed batch.');
   /// });
   /// ```
-  Future<List<WriteResult>> commit([String? transactionId]) async {
+  Future<List<WriteResult>> commit([List<int>? transactionId]) async {
     final response = await _commit(transactionId: transactionId);
 
     return [
-      for (final writeResult
-          in response.writeResults ?? <firestore1.WriteResult>[])
+      for (final writeResult in response.writeResults)
         WriteResult._(
-          Timestamp._fromString(
-            writeResult.updateTime ?? response.commitTime!,
+          Timestamp._fromProtoTimestamp(
+            writeResult.updateTime,
           ),
         ),
     ];
   }
 
   Future<firestore1.CommitResponse> _commit({
-    required String? transactionId,
+    required List<int>? transactionId,
   }) async {
     _commited = true;
 
     final request = firestore1.CommitRequest(
+      database: firestore._formattedDatabaseName,
       transaction: transactionId,
       writes: _operations.map((op) => op.op()).toList(),
     );
 
     return firestore._client.v1((client) async {
-      return client.projects.databases.documents.commit(
-        request,
-        firestore._formattedDatabaseName,
-      );
+      return client.commit(request);
     });
   }
 
@@ -140,7 +136,7 @@ class WriteBatch {
       final write = firestore1.Write(
         delete: documentRef._formattedName,
       );
-      if (precondition != null && !precondition._isEmpty) {
+      if (precondition != null && !precondition.isEmpty) {
         write.currentDocument = precondition._toProto();
       }
       return write;
@@ -171,11 +167,10 @@ class WriteBatch {
       final document =
           DocumentSnapshot._fromObject(documentReference, firestoreData);
 
-      final write = document._toWriteProto();
-      if (transform.transforms.isNotEmpty) {
-        write.updateTransforms = transform.toProto(firestore._serializer);
-      }
-      return write;
+      return document._toWriteProto(
+        transform: transform,
+        serializer: firestore._serializer,
+      );
     }
 
     _operations.add((docPath: documentReference.path, op: op));
@@ -216,13 +211,12 @@ class WriteBatch {
 
     firestore1.Write op() {
       final document = DocumentSnapshot.fromUpdateMap(documentRef, data);
-      final write = document._toWriteProto();
-      write.updateMask = documentMask.toProto();
-      if (transform.transforms.isNotEmpty) {
-        write.updateTransforms = transform.toProto(firestore._serializer);
-      }
-      write.currentDocument = precondition!._toProto();
-      return write;
+      return document._toWriteProto(
+        transform: transform,
+        serializer: firestore._serializer,
+        precondition: precondition,
+        documentMask: documentMask,
+      );
     }
 
     _operations.add((docPath: documentRef.path, op: op));

@@ -3,10 +3,13 @@ import 'dart:convert';
 import 'dart:math' as math;
 
 import 'package:collection/collection.dart';
+import 'package:fixnum/fixnum.dart' as fixnum;
 import 'package:freezed_annotation/freezed_annotation.dart';
-import 'package:googleapis/firestore/v1.dart' as firestore1;
-import 'package:http/http.dart';
-import 'package:intl/intl.dart';
+import 'package:googleapis_grpc/google_firestore_v1.dart' as firestore1;
+import 'package:googleapis_grpc/google_protobuf.dart' as google_protobuf;
+import 'package:googleapis_grpc/google_type.dart' as google_type;
+import 'package:grpc/grpc.dart' as grpc;
+import 'package:rxdart/rxdart.dart';
 
 import '../app.dart';
 import '../object_utils.dart';
@@ -19,6 +22,7 @@ part 'convert.dart';
 part 'document.dart';
 part 'document_change.dart';
 part 'document_reader.dart';
+part 'document_watcher.dart';
 part 'field_value.dart';
 part 'filter.dart';
 part 'firestore.freezed.dart';
@@ -26,6 +30,7 @@ part 'firestore_api_request_internal.dart';
 part 'firestore_exception.dart';
 part 'geo_point.dart';
 part 'path.dart';
+part 'query_watcher.dart';
 part 'reference.dart';
 part 'serializer.dart';
 part 'timestamp.dart';
@@ -48,8 +53,10 @@ class Firestore {
   final FirebaseAdminApp app;
   final Settings _settings;
 
-  late final _client = _FirestoreHttpClient(app);
+  late final _client = _FirestoreGrpcClient(app);
   late final _serializer = _Serializer(this);
+
+  final Map<Object, _DocumentWatcher<dynamic>> _listenStreamCache = {};
 
   // TODO batch
   // TODO bulkWriter
@@ -194,6 +201,42 @@ class Firestore {
     return reader.get();
   }
 
+  // Listens for changes in document from Firestore.
+  Stream<DocumentSnapshot<T>> listenDocument<T>(
+    DocumentReference<T> document,
+  ) {
+    final path = document._formattedName;
+    if (_listenStreamCache.containsKey(path)) {
+      return _listenStreamCache[path]!.stream as Stream<DocumentSnapshot<T>>;
+    }
+
+    final watcher = _DocumentWatcher<T>(
+      firestore: this,
+      document: document,
+      onDone: () => _listenStreamCache.remove(path),
+    );
+
+    return watcher.stream;
+  }
+
+  // Listens for changes in document from Firestore.
+  Stream<QuerySnapshot<T>> listenQuery<T>(
+    Query<T> query,
+  ) {
+    final options = query._queryOptions;
+    if (_listenStreamCache.containsKey(options)) {
+      return _listenStreamCache[options]!.stream as Stream<QuerySnapshot<T>>;
+    }
+
+    final watcher = _QueryWatcher<T>(
+      firestore: this,
+      query: query,
+      onDone: () => _listenStreamCache.remove(options),
+    );
+
+    return watcher.stream;
+  }
+
   /// Executes the given updateFunction and commits the changes applied within
   /// the transaction.
   /// You can use the transaction object passed to 'updateFunction' to read and
@@ -236,7 +279,7 @@ class SettingsCredentials {
 
 /// Settings used to directly configure a `Firestore` instance.
 @freezed
-class Settings with _$Settings {
+sealed class Settings with _$Settings {
   /// Settings used to directly configure a `Firestore` instance.
   factory Settings({
     /// The database name. If omitted, the default database will be used.
@@ -250,31 +293,30 @@ class Settings with _$Settings {
   }) = _Settings;
 }
 
-class _FirestoreHttpClient {
-  _FirestoreHttpClient(this.app);
+class _FirestoreGrpcClient {
+  _FirestoreGrpcClient(this.app);
 
   // TODO needs to send "owner" as bearer token when using the emulator
   final FirebaseAdminApp app;
 
-  // TODO refactor with auth
-  // TODO is it fine to use AuthClient?
-  Future<R> _run<R>(
-    Future<R> Function(Client client) fn,
-  ) {
-    return _firestoreGuard(() => app.client.then(fn));
+  late final _client = firestore1.FirestoreClient(
+    app.firestoreChannel,
+    options: app.isUsingEmulator
+        ? grpc.CallOptions(metadata: {'authorization': 'Bearer owner'})
+        : app.authenticator?.toCallOptions,
+  );
+
+  R _run<R>(R Function() fn) {
+    return _firestoreGuard(fn);
   }
 
-  Future<R> v1<R>(
-    Future<R> Function(firestore1.FirestoreApi client) fn,
-  ) {
-    return _run(
-      (client) => fn(
-        firestore1.FirestoreApi(
-          client,
-          rootUrl: app.firestoreApiHost.toString(),
-        ),
-      ),
-    );
+  Future<R> v1<R>(Future<R> Function(firestore1.FirestoreClient client) fn) {
+    return _run(() => fn(_client));
+  }
+
+  Stream<R> v1Stream<R>(
+      Stream<R> Function(firestore1.FirestoreClient client) fn) {
+    return _run(() => fn(_client));
   }
 }
 

@@ -51,7 +51,12 @@ Future<String> getIdToken() async {
 }
 
 void main() {
-  group('FirebaseAuth', () {
+  final hasGoogleEnv =
+      Platform.environment['GOOGLE_APPLICATION_CREDENTIALS'] != null;
+
+  group(
+      skip: hasGoogleEnv ? false : 'Requires GOOGLE_APPLICATION_CREDENTIALS',
+      'FirebaseAuth', () {
     group('verifyIdToken', () {
       test('in prod', () async {
         final app = createApp(useEmulator: false);

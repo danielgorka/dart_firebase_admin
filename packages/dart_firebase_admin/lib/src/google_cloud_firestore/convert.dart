@@ -3,20 +3,20 @@ part of 'firestore.dart';
 /// Verifies that a `Value` only has a single type set.
 void _assertValidProtobufValue(firestore1.Value proto) {
   final values = [
-    proto.booleanValue,
-    proto.doubleValue,
-    proto.integerValue,
-    proto.stringValue,
-    proto.timestampValue,
-    proto.nullValue,
-    proto.mapValue,
-    proto.arrayValue,
-    proto.referenceValue,
-    proto.geoPointValue,
-    proto.bytesValue,
+    proto.hasBooleanValue(),
+    proto.hasDoubleValue(),
+    proto.hasIntegerValue(),
+    proto.hasStringValue(),
+    proto.hasTimestampValue(),
+    proto.hasNullValue(),
+    proto.hasMapValue(),
+    proto.hasArrayValue(),
+    proto.hasReferenceValue(),
+    proto.hasGeoPointValue(),
+    proto.hasBytesValue(),
   ];
 
-  if (values.nonNulls.length != 1) {
+  if (values.where((b) => b).length != 1) {
     throw ArgumentError.value(
       proto,
       'proto',

@@ -1,19 +1,5 @@
 part of 'firestore.dart';
 
-/// Encode seconds+nanoseconds to a Google Firestore timestamp string.
-String _toGoogleDateTime({required int seconds, required int nanoseconds}) {
-  final date = DateTime.fromMillisecondsSinceEpoch(seconds * 1000, isUtc: true);
-  var formattedDate = DateFormat('yyyy-MM-ddTHH:mm:ss').format(date);
-
-  if (nanoseconds > 0) {
-    final nanoString =
-        nanoseconds.toString().padLeft(9, '0'); // Ensure it has 9 digits
-    formattedDate = '$formattedDate.$nanoString';
-  }
-
-  return '${formattedDate}Z';
-}
-
 /// A Timestamp represents a point in time independent of any time zone or calendar,
 /// represented as seconds and fractions of seconds at nanosecond resolution in UTC
 /// Epoch time. It is encoded using the Proleptic Gregorian Calendar which extends
@@ -116,30 +102,10 @@ final class Timestamp implements _Serializable {
     return Timestamp(seconds: seconds, nanoseconds: nanos);
   }
 
-  factory Timestamp._fromString(String timestampValue) {
-    final date = DateTime.parse(timestampValue);
-    var nanos = 0;
-
-    if (timestampValue.length > 20) {
-      final nanoString = timestampValue.substring(
-        20,
-        timestampValue.length - 1,
-      );
-      final trailingZeroes = 9 - nanoString.length;
-      nanos = int.parse(nanoString) * (math.pow(10, trailingZeroes).toInt());
-    }
-
-    if (nanos.isNaN || date.second.isNaN) {
-      throw ArgumentError.value(
-        timestampValue,
-        'timestampValue',
-        'Specify a valid ISO 8601 timestamp.',
-      );
-    }
-
+  factory Timestamp._fromProtoTimestamp(google_protobuf.Timestamp timestamp) {
     return Timestamp(
-      seconds: date.millisecondsSinceEpoch ~/ 1000,
-      nanoseconds: nanos,
+      seconds: timestamp.seconds.toInt(),
+      nanoseconds: timestamp.nanos,
     );
   }
 
@@ -152,9 +118,9 @@ final class Timestamp implements _Serializable {
   @override
   firestore1.Value _toProto() {
     return firestore1.Value(
-      timestampValue: _toGoogleDateTime(
-        seconds: seconds,
-        nanoseconds: nanoseconds,
+      timestampValue: google_protobuf.Timestamp(
+        seconds: fixnum.Int64(seconds),
+        nanos: nanoseconds,
       ),
     );
   }

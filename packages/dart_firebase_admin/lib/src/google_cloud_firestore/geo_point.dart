@@ -3,7 +3,7 @@ part of 'firestore.dart';
 /// An immutable object representing a geographic location in Firestore. The
 /// location is represented as a latitude/longitude pair.
 @immutable
-final class GeoPoint implements _Serializable {
+final class GeoPoint implements _Serializable, Comparable<GeoPoint> {
   GeoPoint({
     required this.latitude,
     required this.longitude,
@@ -40,10 +40,10 @@ final class GeoPoint implements _Serializable {
   }
 
   /// Converts a google.type.LatLng proto to its GeoPoint representation.
-  factory GeoPoint._fromProto(firestore1.LatLng latLng) {
+  factory GeoPoint._fromProto(google_type.LatLng latLng) {
     return GeoPoint(
-      latitude: latLng.latitude ?? 0,
-      longitude: latLng.longitude ?? 0,
+      latitude: latLng.latitude,
+      longitude: latLng.longitude,
     );
   }
 
@@ -56,7 +56,7 @@ final class GeoPoint implements _Serializable {
   @override
   firestore1.Value _toProto() {
     return firestore1.Value(
-      geoPointValue: firestore1.LatLng(
+      geoPointValue: google_type.LatLng(
         latitude: latitude,
         longitude: longitude,
       ),
@@ -72,4 +72,12 @@ final class GeoPoint implements _Serializable {
 
   @override
   int get hashCode => Object.hash(latitude, longitude);
+
+  @override
+  int compareTo(GeoPoint other) {
+    if (latitude == other.latitude) {
+      return longitude.compareTo(other.longitude);
+    }
+    return latitude.compareTo(other.latitude);
+  }
 }

@@ -19,7 +19,7 @@ List<FieldPath>? _parseFieldMask(ReadOptions? readOptions) {
 class _TransactionResult<T> {
   _TransactionResult({this.transaction, required this.result});
 
-  final String? transaction;
+  final List<int>? transaction;
   final T result;
 }
 
@@ -73,8 +73,8 @@ class Transaction {
   /// Future that resolves to the transaction ID of the current attempt.
   /// It is lazily initialised upon the first read. Upon retry, it is reset and
   /// [_prevTransactionId] is set
-  Future<String>? _transactionIdPromise;
-  String? _prevTransactionId;
+  Future<List<int>>? _transactionIdPromise;
+  List<int>? _prevTransactionId;
 
   // TODO support Query as parameter for [get]
 
@@ -204,7 +204,7 @@ class Transaction {
       throw Exception(readOnlyWriteErrorMsg);
     }
 
-    String? transactionId;
+    List<int>? transactionId;
     // If we have not performed any reads in this particular attempt
     // then the writes will be atomically committed without a transaction ID
     if (_transactionIdPromise != null) {
@@ -227,7 +227,7 @@ class Transaction {
       return;
     }
 
-    String? transactionId;
+    List<int>? transactionId;
 
     try {
       transactionId = await _transactionIdPromise;
@@ -245,16 +245,13 @@ class Transaction {
     // If there are any locks held, then rollback will eventually release them.
     // Rollback can be done concurrently thereby reducing latency caused by
     // otherwise blocking.
-    final rollBackRequest =
-        firestore1.RollbackRequest(transaction: transactionId);
-    return _firestore._client.v1((client) {
-      return client.projects.databases.documents
-          .rollback(
-            rollBackRequest,
-            _firestore._formattedDatabaseName,
-          )
-          .catchError(_handleException);
-    });
+    final rollBackRequest = firestore1.RollbackRequest(
+      database: _firestore._formattedDatabaseName,
+      transaction: transactionId,
+    );
+    return _firestore._client.v1(
+      (client) => client.rollback(rollBackRequest).catchError(_handleException),
+    );
   }
 
   /// Given a function that performs a read operation, ensures that the first one
@@ -265,7 +262,7 @@ class Transaction {
     List<FieldPath>? fieldMask,
     required Future<_TransactionResult<TResult>> Function(
       T docRef, {
-      String? transactionId,
+      List<int>? transactionId,
       Timestamp? readTime,
       firestore1.TransactionOptions? transactionOptions,
       List<FieldPath>? fieldMask,
@@ -299,10 +296,12 @@ class Transaction {
         final opts = firestore1.TransactionOptions();
         if (_writeBatch != null) {
           opts.readWrite = _prevTransactionId == null
-              ? firestore1.ReadWrite()
-              : firestore1.ReadWrite(retryTransaction: _prevTransactionId);
+              ? firestore1.TransactionOptions_ReadWrite()
+              : firestore1.TransactionOptions_ReadWrite(
+                  retryTransaction: _prevTransactionId,
+                );
         } else {
-          opts.readOnly = firestore1.ReadOnly();
+          opts.readOnly = firestore1.TransactionOptions_ReadOnly();
         }
 
         final resultPromise =
@@ -334,7 +333,7 @@ class Transaction {
 
   Future<_TransactionResult<DocumentSnapshot<T>>> _getSingleFn<T>(
     DocumentReference<T> docRef, {
-    String? transactionId,
+    List<int>? transactionId,
     Timestamp? readTime,
     firestore1.TransactionOptions? transactionOptions,
     List<FieldPath>? fieldMask,
@@ -356,7 +355,7 @@ class Transaction {
 
   Future<_TransactionResult<List<DocumentSnapshot<T>>>> _getBatchFn<T>(
     List<DocumentReference<T>> docsdocumentRefs, {
-    String? transactionId,
+    List<int>? transactionId,
     Timestamp? readTime,
     firestore1.TransactionOptions? transactionOptions,
     List<FieldPath>? fieldMask,

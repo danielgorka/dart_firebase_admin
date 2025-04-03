@@ -1,4 +1,5 @@
 import 'package:dart_firebase_admin/firestore.dart';
+import 'package:googleapis_grpc/google_firestore_v1.dart';
 import 'package:test/test.dart';
 
 import 'util/helpers.dart';
@@ -196,16 +197,43 @@ void main() {
     setUp(() async => firestore = await createFirestore());
 
     test('handles all operators', () {
-      expect(WhereFilter.equal.proto, 'EQUAL');
-      expect(WhereFilter.greaterThan.proto, 'GREATER_THAN');
-      expect(WhereFilter.greaterThanOrEqual.proto, 'GREATER_THAN_OR_EQUAL');
-      expect(WhereFilter.lessThan.proto, 'LESS_THAN');
-      expect(WhereFilter.lessThanOrEqual.proto, 'LESS_THAN_OR_EQUAL');
-      expect(WhereFilter.notEqual.proto, 'NOT_EQUAL');
-      expect(WhereFilter.isIn.proto, 'IN');
-      expect(WhereFilter.notIn.proto, 'NOT_IN');
-      expect(WhereFilter.arrayContains.proto, 'ARRAY_CONTAINS');
-      expect(WhereFilter.arrayContainsAny.proto, 'ARRAY_CONTAINS_ANY');
+      expect(
+        WhereFilter.equal.proto,
+        StructuredQuery_FieldFilter_Operator.EQUAL,
+      );
+      expect(
+        WhereFilter.greaterThan.proto,
+        StructuredQuery_FieldFilter_Operator.GREATER_THAN,
+      );
+      expect(
+        WhereFilter.greaterThanOrEqual.proto,
+        StructuredQuery_FieldFilter_Operator.GREATER_THAN_OR_EQUAL,
+      );
+      expect(
+        WhereFilter.lessThan.proto,
+        StructuredQuery_FieldFilter_Operator.LESS_THAN,
+      );
+      expect(
+        WhereFilter.lessThanOrEqual.proto,
+        StructuredQuery_FieldFilter_Operator.LESS_THAN_OR_EQUAL,
+      );
+      expect(
+        WhereFilter.notEqual.proto,
+        StructuredQuery_FieldFilter_Operator.NOT_EQUAL,
+      );
+      expect(WhereFilter.isIn.proto, StructuredQuery_FieldFilter_Operator.IN);
+      expect(
+        WhereFilter.notIn.proto,
+        StructuredQuery_FieldFilter_Operator.NOT_IN,
+      );
+      expect(
+        WhereFilter.arrayContains.proto,
+        StructuredQuery_FieldFilter_Operator.ARRAY_CONTAINS,
+      );
+      expect(
+        WhereFilter.arrayContainsAny.proto,
+        StructuredQuery_FieldFilter_Operator.ARRAY_CONTAINS_ANY,
+      );
     });
 
     test('accepts objects', () async {

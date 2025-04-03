@@ -1,20 +1,26 @@
 part of 'firestore.dart';
 
 enum WhereFilter {
-  lessThan('LESS_THAN'),
-  lessThanOrEqual('LESS_THAN_OR_EQUAL'),
-  equal('EQUAL'),
-  notEqual('NOT_EQUAL'),
-  greaterThanOrEqual('GREATER_THAN_OR_EQUAL'),
-  greaterThan('GREATER_THAN'),
-  isIn('IN'),
-  notIn('NOT_IN'),
-  arrayContains('ARRAY_CONTAINS'),
-  arrayContainsAny('ARRAY_CONTAINS_ANY');
+  lessThan(firestore1.StructuredQuery_FieldFilter_Operator.LESS_THAN),
+  lessThanOrEqual(
+    firestore1.StructuredQuery_FieldFilter_Operator.LESS_THAN_OR_EQUAL,
+  ),
+  equal(firestore1.StructuredQuery_FieldFilter_Operator.EQUAL),
+  notEqual(firestore1.StructuredQuery_FieldFilter_Operator.NOT_EQUAL),
+  greaterThanOrEqual(
+    firestore1.StructuredQuery_FieldFilter_Operator.GREATER_THAN_OR_EQUAL,
+  ),
+  greaterThan(firestore1.StructuredQuery_FieldFilter_Operator.GREATER_THAN),
+  isIn(firestore1.StructuredQuery_FieldFilter_Operator.IN),
+  notIn(firestore1.StructuredQuery_FieldFilter_Operator.NOT_IN),
+  arrayContains(firestore1.StructuredQuery_FieldFilter_Operator.ARRAY_CONTAINS),
+  arrayContainsAny(
+    firestore1.StructuredQuery_FieldFilter_Operator.ARRAY_CONTAINS_ANY,
+  );
 
   const WhereFilter(this.proto);
 
-  final String proto;
+  final firestore1.StructuredQuery_FieldFilter_Operator proto;
 }
 
 /// A `Filter` represents a restriction on one or more field values and can
@@ -173,10 +179,12 @@ enum _CompositeOperator {
   and,
   or;
 
-  String get proto {
+  firestore1.StructuredQuery_CompositeFilter_Operator get proto {
     return switch (this) {
-      _CompositeOperator.and => 'AND',
-      _CompositeOperator.or => 'OR',
+      _CompositeOperator.and =>
+        firestore1.StructuredQuery_CompositeFilter_Operator.AND,
+      _CompositeOperator.or =>
+        firestore1.StructuredQuery_CompositeFilter_Operator.OR,
     };
   }
 }

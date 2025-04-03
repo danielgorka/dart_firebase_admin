@@ -1,8 +1,30 @@
 part of 'firestore.dart';
 
-class Optional<T> {
+class Optional<T> implements Comparable<Optional<Object?>> {
   const Optional(this.value);
   final T? value;
+
+  @override
+  int compareTo(Optional<Object?> other) {
+    final thisValue = value;
+    final otherValue = other.value;
+    if (thisValue == null && otherValue == null) return 0;
+    if (thisValue == null) return -1;
+    if (otherValue == null) return 1;
+
+    return switch (thisValue) {
+      bool() => thisValue == otherValue as bool
+          ? 0
+          : thisValue && !otherValue
+              ? 1
+              : -1,
+      Comparable() => thisValue.compareTo(otherValue as Comparable),
+      _ => throw ArgumentError(
+          'Cannot compare ${thisValue.runtimeType} '
+          'with ${otherValue.runtimeType}',
+        ),
+    };
+  }
 }
 
 /// A DocumentSnapshot is an immutable representation for a document in a
@@ -91,7 +113,7 @@ class DocumentSnapshot<T> {
         target[key] = firestore1.Value(
           mapValue: firestore1.MapValue(
             fields: merge(
-              target: target[key]!.mapValue!.fields!,
+              target: target[key]!.mapValue.fields,
               value: value,
               path: path,
               pos: pos + 1,
@@ -119,27 +141,27 @@ class DocumentSnapshot<T> {
 
   static DocumentSnapshot<DocumentData> _fromDocument(
     firestore1.Document document,
-    String? readTime,
+    google_protobuf.Timestamp? readTime,
     Firestore firestore,
   ) {
     final ref = DocumentReference<DocumentData>._(
       firestore: firestore,
-      path: _QualifiedResourcePath.fromSlashSeparatedString(document.name!),
+      path: _QualifiedResourcePath.fromSlashSeparatedString(document.name),
       converter: _jsonConverter,
     );
 
     final builder = _DocumentSnapshotBuilder(ref)
-      ..fieldsProto = firestore1.MapValue(fields: document.fields ?? {})
-      ..createTime = document.createTime.let(Timestamp._fromString)
-      ..readTime = readTime.let(Timestamp._fromString)
-      ..updateTime = document.updateTime.let(Timestamp._fromString);
+      ..fieldsProto = firestore1.MapValue(fields: document.fields)
+      ..createTime = document.createTime.let(Timestamp._fromProtoTimestamp)
+      ..readTime = readTime.let(Timestamp._fromProtoTimestamp)
+      ..updateTime = document.updateTime.let(Timestamp._fromProtoTimestamp);
 
     return builder.build();
   }
 
   static DocumentSnapshot<DocumentData> _missing(
     String document,
-    String? readTime,
+    google_protobuf.Timestamp? readTime,
     Firestore firestore,
   ) {
     final ref = DocumentReference<DocumentData>._(
@@ -149,7 +171,7 @@ class DocumentSnapshot<T> {
     );
 
     final builder = _DocumentSnapshotBuilder(ref)
-      ..readTime = readTime.let(Timestamp._fromString);
+      ..readTime = readTime.let(Timestamp._fromProtoTimestamp);
 
     return builder.build();
   }
@@ -235,6 +257,11 @@ class DocumentSnapshot<T> {
   /// Will return `Optional(null)` if the field exists but is `null`.
   Optional<Object?>? get(Object field) {
     final fieldPath = FieldPath.from(field);
+
+    if (fieldPath == FieldPath.documentId) {
+      return Optional(ref.id);
+    }
+
     final protoField = _protoField(fieldPath);
 
     if (protoField == null) return null;
@@ -257,18 +284,30 @@ class DocumentSnapshot<T> {
       // The field component is not present.
       if (newFields == null) return null;
 
-      fields = newFields.fields!;
+      fields = newFields.fields;
     }
 
     return fields[components.last];
   }
 
-  firestore1.Write _toWriteProto() {
+  firestore1.Write _toWriteProto({
+    required _DocumentTransform<T> transform,
+    required _Serializer serializer,
+    Precondition? precondition,
+    _DocumentMask? documentMask,
+  }) {
     return firestore1.Write(
       update: firestore1.Document(
         name: ref._formattedName,
         fields: _fieldsProto?.fields,
       ),
+      updateTransforms: transform.transforms.isNotEmpty
+          ? transform.toProto(serializer)
+          : null,
+      currentDocument: precondition != null && !precondition.isEmpty
+          ? precondition._toProto()
+          : null,
+      updateMask: documentMask?.toProto(),
     );
   }
 
@@ -433,7 +472,9 @@ class _DocumentTransform<T> {
   }
 
   /// Converts a document transform to the Firestore 'FieldTransform' Proto.
-  List<firestore1.FieldTransform> toProto(_Serializer serializer) {
+  List<firestore1.DocumentTransform_FieldTransform> toProto(
+    _Serializer serializer,
+  ) {
     return [
       for (final entry in transforms.entries)
         entry.value._toProto(serializer, entry.key),
@@ -454,10 +495,10 @@ class Precondition {
   final Timestamp? _lastUpdateTime;
 
   /// Whether this DocumentTransform contains any enforcement.
-  bool get _isEmpty => _exists == null && _lastUpdateTime == null;
+  bool get isEmpty => _exists == null && _lastUpdateTime == null;
 
-  firestore1.Precondition? _toProto() {
-    if (_isEmpty) return null;
+  firestore1.Precondition _toProto() {
+    assert(!isEmpty, 'Precondition is empty');
 
     final lastUpdateTime = _lastUpdateTime;
     if (lastUpdateTime != null) {

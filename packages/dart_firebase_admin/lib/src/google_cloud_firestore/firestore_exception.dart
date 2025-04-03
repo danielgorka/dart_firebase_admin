@@ -17,21 +17,18 @@ R _firestoreGuard<R>(R Function() cb) {
 
 /// Converts a Exception to a FirebaseAdminException.
 Never _handleException(Object exception, StackTrace stackTrace) {
-  if (exception is firestore1.DetailedApiRequestError) {
+  if (exception is grpc.GrpcError) {
     Error.throwWithStackTrace(
-      _createFirebaseError(
-        statusCode: exception.status,
-        body: switch (exception.jsonResponse) {
-          null => '',
-          final json => jsonEncode(json),
-        },
-        isJson: exception.jsonResponse != null,
+      FirebaseFirestoreAdminException.fromServerError(
+        serverErrorCode: exception.codeName,
+        message: exception.message,
+        rawServerResponse: exception.rawResponse,
       ),
       stackTrace,
     );
+  } else {
+    Error.throwWithStackTrace(exception, stackTrace);
   }
-
-  Error.throwWithStackTrace(exception, stackTrace);
 }
 
 class FirebaseFirestoreAdminException extends FirebaseAdminException

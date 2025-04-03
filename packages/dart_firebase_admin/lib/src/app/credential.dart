@@ -45,9 +45,10 @@ class _EmulatorClient extends BaseClient {
 
 /// Authentication information for Firebase Admin SDK.
 class Credential {
-  Credential._(
-    this.serviceAccountCredentials, {
+  Credential._({
+    this.serviceAccountCredentials,
     this.serviceAccountId,
+    this.serviceAccountJson,
   }) : assert(
           serviceAccountId == null || serviceAccountCredentials == null,
           'Cannot specify both serviceAccountId and serviceAccountCredentials',
@@ -65,7 +66,10 @@ class Credential {
     final serviceAccountCredentials =
         auth.ServiceAccountCredentials.fromJson(json);
 
-    return Credential._(serviceAccountCredentials);
+    return Credential._(
+      serviceAccountCredentials: serviceAccountCredentials,
+      serviceAccountJson: content,
+    );
   }
 
   /// Log in to firebase from a service account file parameters.
@@ -80,7 +84,15 @@ class Credential {
       privateKey,
     );
 
-    return Credential._(serviceAccountCredentials);
+    return Credential._(
+      serviceAccountCredentials: serviceAccountCredentials,
+      serviceAccountJson: jsonEncode({
+        'type': 'service_account',
+        'client_id': clientId,
+        'private_key': privateKey,
+        'client_email': email,
+      }),
+    );
   }
 
   /// Log in to firebase using the environment variable.
@@ -88,14 +100,15 @@ class Credential {
     String? serviceAccountId,
   }) {
     ServiceAccountCredentials? creds;
+    String? serviceAccountJson;
 
     final env =
         Zone.current[envSymbol] as Map<String, String>? ?? Platform.environment;
     final maybeConfig = env['GOOGLE_APPLICATION_CREDENTIALS'];
     if (maybeConfig != null && File(maybeConfig).existsSync()) {
       try {
-        final text = File(maybeConfig).readAsStringSync();
-        final decodedValue = jsonDecode(text);
+        serviceAccountJson = File(maybeConfig).readAsStringSync();
+        final decodedValue = jsonDecode(serviceAccountJson);
         if (decodedValue is Map) {
           creds = ServiceAccountCredentials.fromJson(decodedValue);
         }
@@ -103,7 +116,8 @@ class Credential {
     }
 
     return Credential._(
-      creds,
+      serviceAccountCredentials: creds,
+      serviceAccountJson: serviceAccountJson,
       serviceAccountId: serviceAccountId,
     );
   }
@@ -113,4 +127,15 @@ class Credential {
 
   @internal
   final auth.ServiceAccountCredentials? serviceAccountCredentials;
+
+  @internal
+  final String? serviceAccountJson;
+
+  grpc.ServiceAccountAuthenticator? authenticatorFor(List<String> scopes) =>
+      serviceAccountJson != null
+          ? grpc.ServiceAccountAuthenticator(
+              serviceAccountJson!,
+              scopes,
+            )
+          : null;
 }

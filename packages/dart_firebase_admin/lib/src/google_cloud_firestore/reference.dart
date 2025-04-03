@@ -90,25 +90,25 @@ final class CollectionReference<T> extends Query<T> {
       firestore._databaseId,
     );
 
+    final request = firestore1.ListDocumentsRequest(
+      parent: parentPath._formattedName,
+      collectionId: id,
+      // Setting `pageSize` to an arbitrarily large value lets the backend cap
+      // the page size (currently to 300). Note that the backend rejects
+      // MAX_INT32 (b/146883794).
+      pageSize: math.pow(2, 16 - 1).toInt(),
+      showMissing: true,
+    );
+
     final response = await firestore._client.v1((client) {
-      return client.projects.databases.documents.list(
-        parentPath._formattedName,
-        id,
-        showMissing: true,
-        // Setting `pageSize` to an arbitrarily large value lets the backend cap
-        // the page size (currently to 300). Note that the backend rejects
-        // MAX_INT32 (b/146883794).
-        pageSize: math.pow(2, 16 - 1).toInt(),
-        mask_fieldPaths: [],
-      );
+      return client.listDocuments(request);
     });
 
     return [
-      for (final document
-          in response.documents ?? const <firestore1.Document>[])
+      for (final document in response.documents)
         doc(
           // ignore: unnecessary_null_checks, we don't want to inadvertently obtain a new document
-          _QualifiedResourcePath.fromSlashSeparatedString(document.name!).id!,
+          _QualifiedResourcePath.fromSlashSeparatedString(document.name).id!,
         ),
     ];
   }
@@ -213,20 +213,18 @@ final class DocumentReference<T> implements _Serializable {
   /// });
   /// ```
   Future<List<CollectionReference<DocumentData>>> listCollections() {
-    return this.firestore._client.v1((a) async {
+    return this.firestore._client.v1((client) async {
       final request = firestore1.ListCollectionIdsRequest(
+        parent: this._formattedName,
         // Setting `pageSize` to an arbitrarily large value lets the backend cap
         // the page size (currently to 300). Note that the backend rejects
         // MAX_INT32 (b/146883794).
         pageSize: (math.pow(2, 16) - 1).toInt(),
       );
 
-      final result = await a.projects.databases.documents.listCollectionIds(
-        request,
-        this._formattedName,
-      );
+      final result = await client.listCollectionIds(request);
 
-      final ids = result.collectionIds ?? [];
+      final ids = result.collectionIds;
       ids.sort((a, b) => a.compareTo(b));
 
       return [
@@ -255,6 +253,16 @@ final class DocumentReference<T> implements _Serializable {
   Future<DocumentSnapshot<T>> get() async {
     final result = await firestore.getAll([this]);
     return result.single;
+  }
+
+  /// Notifies of document updates at this location.
+  ///
+  /// An initial event is immediately sent, and further events will be
+  /// sent whenever the document is modified.
+  Stream<DocumentSnapshot<T>> snapshots({
+    bool includeMetadataChanges = false,
+  }) {
+    return firestore.listenDocument(this);
   }
 
   /// Create a document with the provided object values. This will fail the write
@@ -402,41 +410,59 @@ bool _valuesEqual(
 }
 
 bool _valueEqual(firestore1.Value a, firestore1.Value b) {
-  switch (a) {
-    case firestore1.Value(:final arrayValue?):
-      return _valuesEqual(arrayValue.values, b.arrayValue?.values);
-    case firestore1.Value(:final booleanValue?):
-      return booleanValue == b.booleanValue;
-    case firestore1.Value(:final bytesValue?):
-      return bytesValue == b.bytesValue;
-    case firestore1.Value(:final doubleValue?):
-      return doubleValue == b.doubleValue;
-    case firestore1.Value(:final geoPointValue?):
-      return geoPointValue.latitude == b.geoPointValue?.latitude &&
-          geoPointValue.longitude == b.geoPointValue?.longitude;
-    case firestore1.Value(:final integerValue?):
-      return integerValue == b.integerValue;
-    case firestore1.Value(:final mapValue?):
-      final bMap = b.mapValue;
-      if (bMap == null || bMap.fields?.length != mapValue.fields?.length) {
-        return false;
-      }
+  if (a == b) return true;
 
-      for (final MapEntry(:key, :value) in mapValue.fields?.entries ??
-          const <MapEntry<String, firestore1.Value>>[]) {
-        final bValue = bMap.fields?[key];
-        if (bValue == null) return false;
-        if (!_valueEqual(value, bValue)) return false;
-      }
-    case firestore1.Value(:final nullValue?):
-      return nullValue == b.nullValue;
-    case firestore1.Value(:final referenceValue?):
-      return referenceValue == b.referenceValue;
-    case firestore1.Value(:final stringValue?):
-      return stringValue == b.stringValue;
-    case firestore1.Value(:final timestampValue?):
-      return timestampValue == b.timestampValue;
+  if (a.hasBooleanValue()) {
+    return a.booleanValue == b.booleanValue;
   }
+  if (a.hasIntegerValue()) {
+    return a.integerValue == b.integerValue;
+  }
+  if (a.hasDoubleValue()) {
+    return a.doubleValue == b.doubleValue;
+  }
+  if (a.hasReferenceValue()) {
+    return a.referenceValue == b.referenceValue;
+  }
+  if (a.hasMapValue()) {
+    final aMap = a.mapValue;
+    final bMap = b.mapValue;
+
+    if (aMap.fields.length != bMap.fields.length) return false;
+
+    for (final MapEntry(:key, :value) in aMap.fields.entries) {
+      final bValue = bMap.fields[key];
+      if (bValue == null) return false;
+      if (!_valueEqual(value, bValue)) return false;
+    }
+  }
+  if (a.hasGeoPointValue()) {
+    return a.geoPointValue.latitude == b.geoPointValue.latitude &&
+        a.geoPointValue.longitude == b.geoPointValue.longitude;
+  }
+  if (a.hasArrayValue()) {
+    final aArray = a.arrayValue;
+    final bArray = b.arrayValue;
+
+    if (aArray.values.length != bArray.values.length) return false;
+
+    for (final (index, value) in aArray.values.indexed) {
+      if (!_valueEqual(value, bArray.values[index])) return false;
+    }
+  }
+  if (a.hasTimestampValue()) {
+    return a.timestampValue == b.timestampValue;
+  }
+  if (a.hasNullValue()) {
+    return a.nullValue == b.nullValue;
+  }
+  if (a.hasStringValue()) {
+    return a.stringValue == b.stringValue;
+  }
+  if (a.hasBytesValue()) {
+    return a.bytesValue == b.bytesValue;
+  }
+
   return false;
 }
 
@@ -472,12 +498,12 @@ enum LimitType {
 }
 
 enum _Direction {
-  ascending('ASCENDING'),
-  descending('DESCENDING');
+  ascending(firestore1.StructuredQuery_Direction.ASCENDING),
+  descending(firestore1.StructuredQuery_Direction.DESCENDING);
 
   const _Direction(this.value);
 
-  final String value;
+  final firestore1.StructuredQuery_Direction value;
 }
 
 /// A Query order-by field.
@@ -491,13 +517,29 @@ class _FieldOrder {
   final FieldPath fieldPath;
   final _Direction direction;
 
-  firestore1.Order _toProto() {
-    return firestore1.Order(
-      field: firestore1.FieldReference(
+  firestore1.StructuredQuery_Order _toProto() {
+    return firestore1.StructuredQuery_Order(
+      field_1: firestore1.StructuredQuery_FieldReference(
         fieldPath: fieldPath._formattedName,
       ),
       direction: direction.value,
     );
+  }
+
+  int _compare(
+    DocumentSnapshot<DocumentData> a,
+    DocumentSnapshot<DocumentData> b,
+  ) {
+    final aValue = a.get(fieldPath);
+    final bValue = b.get(fieldPath);
+
+    if (aValue == null && bValue == null) return 0;
+    if (aValue == null) return direction == _Direction.ascending ? -1 : 1;
+    if (bValue == null) return direction == _Direction.ascending ? 1 : -1;
+
+    return direction == _Direction.ascending
+        ? aValue.compareTo(bValue)
+        : bValue.compareTo(aValue);
   }
 
   @override
@@ -512,7 +554,7 @@ class _FieldOrder {
 }
 
 @freezed
-class _QueryOptions<T> with _$QueryOptions<T> {
+sealed class _QueryOptions<T> with _$QueryOptions<T> {
   factory _QueryOptions({
     required _ResourcePath parentPath,
     required String collectionId,
@@ -523,7 +565,7 @@ class _QueryOptions<T> with _$QueryOptions<T> {
     _QueryCursor? startAt,
     _QueryCursor? endAt,
     int? limit,
-    firestore1.Projection? projection,
+    firestore1.StructuredQuery_Projection? projection,
     LimitType? limitType,
     int? offset,
     // Whether to select all documents under `parentPath`. By default, only
@@ -601,7 +643,7 @@ sealed class _FilterInternal {
   FieldPath? get firstInequalityField;
 
   /// Returns the proto representation of this filter
-  firestore1.Filter toProto();
+  firestore1.StructuredQuery_Filter toProto();
 
   @mustBeOverridden
   @override
@@ -637,11 +679,11 @@ class _CompositeFilterInternal implements _FilterInternal {
   }
 
   @override
-  firestore1.Filter toProto() {
+  firestore1.StructuredQuery_Filter toProto() {
     if (filters.length == 1) return filters.single.toProto();
 
-    return firestore1.Filter(
-      compositeFilter: firestore1.CompositeFilter(
+    return firestore1.StructuredQuery_Filter(
+      compositeFilter: firestore1.StructuredQuery_CompositeFilter(
         op: op.proto,
         filters: filters.map((e) => e.toProto()).toList(),
       ),
@@ -690,33 +732,37 @@ class _FieldFilterInternal implements _FilterInternal {
   }
 
   @override
-  firestore1.Filter toProto() {
+  firestore1.StructuredQuery_Filter toProto() {
     final value = this.value;
     if (value is num && value.isNaN) {
-      return firestore1.Filter(
-        unaryFilter: firestore1.UnaryFilter(
-          field: firestore1.FieldReference(
+      return firestore1.StructuredQuery_Filter(
+        unaryFilter: firestore1.StructuredQuery_UnaryFilter(
+          field_2: firestore1.StructuredQuery_FieldReference(
             fieldPath: field._formattedName,
           ),
-          op: op == WhereFilter.equal ? 'IS_NAN' : 'IS_NOT_NAN',
+          op: op == WhereFilter.equal
+              ? firestore1.StructuredQuery_UnaryFilter_Operator.IS_NAN
+              : firestore1.StructuredQuery_UnaryFilter_Operator.IS_NOT_NAN,
         ),
       );
     }
 
     if (value == null) {
-      return firestore1.Filter(
-        unaryFilter: firestore1.UnaryFilter(
-          field: firestore1.FieldReference(
+      return firestore1.StructuredQuery_Filter(
+        unaryFilter: firestore1.StructuredQuery_UnaryFilter(
+          field_2: firestore1.StructuredQuery_FieldReference(
             fieldPath: field._formattedName,
           ),
-          op: op == WhereFilter.equal ? 'IS_NULL' : 'IS_NOT_NULL',
+          op: op == WhereFilter.equal
+              ? firestore1.StructuredQuery_UnaryFilter_Operator.IS_NULL
+              : firestore1.StructuredQuery_UnaryFilter_Operator.IS_NOT_NULL,
         ),
       );
     }
 
-    return firestore1.Filter(
-      fieldFilter: firestore1.FieldFilter(
-        field: firestore1.FieldReference(
+    return firestore1.StructuredQuery_Filter(
+      fieldFilter: firestore1.StructuredQuery_FieldFilter(
+        field_1: firestore1.StructuredQuery_FieldReference(
           fieldPath: field._formattedName,
         ),
         op: op.proto,
@@ -854,7 +900,11 @@ base class Query<T> {
       );
     }
 
-    final fieldOrders = _createImplicitOrderBy(snapshot);
+    // Add an implicit orderBy if the only cursor value is a DocumentSnapshot
+    // or a DocumentReference.
+    final fieldOrders =
+        snapshot != null ? _createImplicitOrderBy() : _queryOptions.fieldOrders;
+
     final cursor = _createCursor(
       fieldOrders,
       fieldValues: fieldValues,
@@ -865,13 +915,7 @@ base class Query<T> {
   }
 
   /// Computes the backend ordering semantics for DocumentSnapshot cursors.
-  List<_FieldOrder> _createImplicitOrderBy(
-    DocumentSnapshot<Object?>? snapshot,
-  ) {
-    // Add an implicit orderBy if the only cursor value is a DocumentSnapshot
-    // or a DocumentReference.
-    if (snapshot == null) return _queryOptions.fieldOrders;
-
+  List<_FieldOrder> _createImplicitOrderBy() {
     final fieldOrders = _queryOptions.fieldOrders.toList();
 
     // If no explicit ordering is specified, use the first inequality to
@@ -1135,56 +1179,60 @@ base class Query<T> {
   /// ```
   Future<QuerySnapshot<T>> get() => _get(transactionId: null);
 
-  Future<QuerySnapshot<T>> _get({required String? transactionId}) async {
-    final response = await firestore._client.v1((client) async {
-      return client.projects.databases.documents.runQuery(
+  Future<QuerySnapshot<T>> _get({required List<int>? transactionId}) async {
+    Timestamp? readTime;
+    final snapshots = await firestore._client.v1((client) async {
+      final response = client.runQuery(
         _toProto(
           transactionId: transactionId,
           readTime: null,
         ),
-        _buildProtoParentPath(),
       );
+
+      return response
+          .map((e) {
+            if (!e.hasDocument()) {
+              readTime = e.readTime.let(Timestamp._fromProtoTimestamp);
+              return null;
+            }
+
+            final document = e.document;
+            final snapshot = DocumentSnapshot._fromDocument(
+              document,
+              e.readTime,
+              firestore,
+            );
+            final finalDoc = _DocumentSnapshotBuilder(
+              snapshot.ref.withConverter<T>(
+                fromFirestore: _queryOptions.converter.fromFirestore,
+                toFirestore: _queryOptions.converter.toFirestore,
+              ),
+            )
+              // Recreate the QueryDocumentSnapshot with the DocumentReference
+              // containing the original converter.
+              ..fieldsProto = firestore1.MapValue(fields: document.fields)
+              ..readTime = snapshot.readTime
+              ..createTime = snapshot.createTime
+              ..updateTime = snapshot.updateTime;
+
+            return finalDoc.build();
+          })
+          .whereNotNull()
+          // Specifying fieldsProto should cause the builder to create a query snapshot.
+          .cast<QueryDocumentSnapshot<T>>()
+          .toList();
     });
-
-    Timestamp? readTime;
-    final snapshots = response
-        .map((e) {
-          final document = e.document;
-          if (document == null) {
-            readTime = e.readTime.let(Timestamp._fromString);
-            return null;
-          }
-
-          final snapshot = DocumentSnapshot._fromDocument(
-            document,
-            e.readTime,
-            firestore,
-          );
-          final finalDoc = _DocumentSnapshotBuilder(
-            snapshot.ref.withConverter<T>(
-              fromFirestore: _queryOptions.converter.fromFirestore,
-              toFirestore: _queryOptions.converter.toFirestore,
-            ),
-          )
-            // Recreate the QueryDocumentSnapshot with the DocumentReference
-            // containing the original converter.
-            ..fieldsProto = firestore1.MapValue(fields: document.fields)
-            ..readTime = snapshot.readTime
-            ..createTime = snapshot.createTime
-            ..updateTime = snapshot.updateTime;
-
-          return finalDoc.build();
-        })
-        .nonNulls
-        // Specifying fieldsProto should cause the builder to create a query snapshot.
-        .cast<QueryDocumentSnapshot<T>>()
-        .toList();
 
     return QuerySnapshot<T>._(
       query: this,
       readTime: readTime,
       docs: snapshots,
     );
+  }
+
+  /// Listens to the query and returns a stream of [QuerySnapshot]s.
+  Stream<QuerySnapshot<T>> snapshots() {
+    return firestore.listenQuery(this);
   }
 
   String _buildProtoParentPath() {
@@ -1197,7 +1245,7 @@ base class Query<T> {
   }
 
   firestore1.RunQueryRequest _toProto({
-    required String? transactionId,
+    required List<int>? transactionId,
     required Timestamp? readTime,
   }) {
     if (readTime != null && transactionId != null) {
@@ -1217,35 +1265,40 @@ base class Query<T> {
         );
       }
 
-      structuredQuery.orderBy = _queryOptions.fieldOrders.map((order) {
-        // Flip the orderBy directions since we want the last results
-        final dir = order.direction == _Direction.descending
-            ? _Direction.ascending
-            : _Direction.descending;
-        return _FieldOrder(fieldPath: order.fieldPath, direction: dir)
-            ._toProto();
-      }).toList();
+      structuredQuery.orderBy
+        ..clear()
+        ..addAll(
+          _queryOptions.fieldOrders.map((order) {
+            // Flip the orderBy directions since we want the last results
+            final dir = order.direction == _Direction.descending
+                ? _Direction.ascending
+                : _Direction.descending;
+            return _FieldOrder(fieldPath: order.fieldPath, direction: dir)
+                ._toProto();
+          }),
+        );
 
       // Swap the cursors to match the now-flipped query ordering.
-      structuredQuery.startAt = _queryOptions.endAt != null
-          ? _toCursor(
-              _QueryCursor(
-                values: _queryOptions.endAt!.values,
-                before: !_queryOptions.endAt!.before,
-              ),
-            )
-          : null;
-      structuredQuery.endAt = _queryOptions.startAt != null
-          ? _toCursor(
-              _QueryCursor(
-                values: _queryOptions.startAt!.values,
-                before: !_queryOptions.startAt!.before,
-              ),
-            )
-          : null;
+      if (_queryOptions.endAt != null) {
+        structuredQuery.startAt = _toCursor(
+          _QueryCursor(
+            values: _queryOptions.endAt!.values,
+            before: !_queryOptions.endAt!.before,
+          ),
+        )!;
+      }
+      if (_queryOptions.startAt != null) {
+        structuredQuery.endAt = _toCursor(
+          _QueryCursor(
+            values: _queryOptions.startAt!.values,
+            before: !_queryOptions.startAt!.before,
+          ),
+        )!;
+      }
     }
 
     final runQueryRequest = firestore1.RunQueryRequest(
+      parent: _buildProtoParentPath(),
       structuredQuery: structuredQuery,
     );
 
@@ -1260,17 +1313,17 @@ base class Query<T> {
 
   firestore1.StructuredQuery _toStructuredQuery() {
     final structuredQuery = firestore1.StructuredQuery(
-      from: [firestore1.CollectionSelector()],
+      from: [firestore1.StructuredQuery_CollectionSelector()],
     );
 
     if (_queryOptions.allDescendants) {
-      structuredQuery.from![0].allDescendants = true;
+      structuredQuery.from[0].allDescendants = true;
     }
 
     // Kindless queries select all descendant documents, so we remove the
     // collectionId field.
     if (!_queryOptions.kindless) {
-      structuredQuery.from![0].collectionId = this._queryOptions.collectionId;
+      structuredQuery.from[0].collectionId = this._queryOptions.collectionId;
     }
 
     if (_queryOptions.filters.isNotEmpty) {
@@ -1281,18 +1334,29 @@ base class Query<T> {
     }
 
     if (this._queryOptions.hasFieldOrders) {
-      structuredQuery.orderBy =
-          _queryOptions.fieldOrders.map((o) => o._toProto()).toList();
+      structuredQuery.orderBy
+        ..clear()
+        ..addAll(_queryOptions.fieldOrders.map((o) => o._toProto()));
     }
 
-    structuredQuery.startAt = _toCursor(_queryOptions.startAt);
-    structuredQuery.endAt = _toCursor(_queryOptions.endAt);
+    if (_queryOptions.startAt != null) {
+      structuredQuery.startAt = _toCursor(_queryOptions.startAt)!;
+    }
+    if (_queryOptions.endAt != null) {
+      structuredQuery.endAt = _toCursor(_queryOptions.endAt)!;
+    }
 
     final limit = _queryOptions.limit;
-    if (limit != null) structuredQuery.limit = limit;
+    if (limit != null) {
+      structuredQuery.limit = google_protobuf.Int32Value(value: limit);
+    }
 
-    structuredQuery.offset = _queryOptions.offset;
-    structuredQuery.select = _queryOptions.projection;
+    if (_queryOptions.offset != null) {
+      structuredQuery.offset = _queryOptions.offset!;
+    }
+    if (_queryOptions.projection != null) {
+      structuredQuery.select = _queryOptions.projection!;
+    }
 
     return structuredQuery;
   }
@@ -1496,20 +1560,24 @@ base class Query<T> {
   /// });
   /// ```
   Query<DocumentData> select([List<FieldPath> fieldPaths = const []]) {
-    final fields = <firestore1.FieldReference>[
+    final fields = <firestore1.StructuredQuery_FieldReference>[
       if (fieldPaths.isEmpty)
-        firestore1.FieldReference(
+        firestore1.StructuredQuery_FieldReference(
           fieldPath: FieldPath.documentId._formattedName,
         )
       else
         for (final fieldPath in fieldPaths)
-          firestore1.FieldReference(fieldPath: fieldPath._formattedName),
+          firestore1.StructuredQuery_FieldReference(
+            fieldPath: fieldPath._formattedName,
+          ),
     ];
 
     return Query<DocumentData>._(
       firestore: firestore,
       queryOptions: _queryOptions
-          .copyWith(projection: firestore1.Projection(fields: fields))
+          .copyWith(
+            projection: firestore1.StructuredQuery_Projection(fields: fields),
+          )
           .withConverter(
             // By specifying a field mask, the query result no longer conforms to type
             // `T`. We there return `Query<DocumentData>`.
