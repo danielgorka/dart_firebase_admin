@@ -914,6 +914,28 @@ base class Query<T> {
     return (cursor, fieldOrders);
   }
 
+  /// Computes the ordering that were specified in the final proto query.
+  List<_FieldOrder> _createBackendOrderBy() {
+    final fieldOrders = _createImplicitOrderBy();
+    if (this._queryOptions.limitType == LimitType.last) {
+      if (!this._queryOptions.hasFieldOrders) {
+        throw ArgumentError(
+          'limitToLast() queries require specifying at least one orderBy() clause.',
+        );
+      }
+
+      return fieldOrders.map((order) {
+        // Flip the orderBy directions since we want the last results
+        final dir = order.direction == _Direction.descending
+            ? _Direction.ascending
+            : _Direction.descending;
+        return _FieldOrder(fieldPath: order.fieldPath, direction: dir);
+      }).toList();
+    }
+
+    return fieldOrders;
+  }
+
   /// Computes the backend ordering semantics for DocumentSnapshot cursors.
   List<_FieldOrder> _createImplicitOrderBy() {
     final fieldOrders = _queryOptions.fieldOrders.toList();
@@ -1183,7 +1205,7 @@ base class Query<T> {
     Timestamp? readTime;
     final snapshots = await firestore._client.v1((client) async {
       final response = client.runQuery(
-        _toProto(
+        _toProtoRequest(
           transactionId: transactionId,
           readTime: null,
         ),
@@ -1244,7 +1266,7 @@ base class Query<T> {
         ._formattedName;
   }
 
-  firestore1.RunQueryRequest _toProto({
+  firestore1.RunQueryRequest _toProtoRequest({
     required List<int>? transactionId,
     required Timestamp? readTime,
   }) {
@@ -1254,52 +1276,9 @@ base class Query<T> {
       );
     }
 
-    final structuredQuery = _toStructuredQuery();
-
-    // For limitToLast queries, the structured query has to be translated to a version with
-    // reversed ordered, and flipped startAt/endAt to work properly.
-    if (this._queryOptions.limitType == LimitType.last) {
-      if (!this._queryOptions.hasFieldOrders) {
-        throw ArgumentError(
-          'limitToLast() queries require specifying at least one orderBy() clause.',
-        );
-      }
-
-      structuredQuery.orderBy
-        ..clear()
-        ..addAll(
-          _queryOptions.fieldOrders.map((order) {
-            // Flip the orderBy directions since we want the last results
-            final dir = order.direction == _Direction.descending
-                ? _Direction.ascending
-                : _Direction.descending;
-            return _FieldOrder(fieldPath: order.fieldPath, direction: dir)
-                ._toProto();
-          }),
-        );
-
-      // Swap the cursors to match the now-flipped query ordering.
-      if (_queryOptions.endAt != null) {
-        structuredQuery.startAt = _toCursor(
-          _QueryCursor(
-            values: _queryOptions.endAt!.values,
-            before: !_queryOptions.endAt!.before,
-          ),
-        )!;
-      }
-      if (_queryOptions.startAt != null) {
-        structuredQuery.endAt = _toCursor(
-          _QueryCursor(
-            values: _queryOptions.startAt!.values,
-            before: !_queryOptions.startAt!.before,
-          ),
-        )!;
-      }
-    }
-
     final runQueryRequest = firestore1.RunQueryRequest(
       parent: _buildProtoParentPath(),
-      structuredQuery: structuredQuery,
+      structuredQuery: _toStructuredQuery(),
     );
 
     if (transactionId != null) {
@@ -1309,6 +1288,13 @@ base class Query<T> {
     }
 
     return runQueryRequest;
+  }
+
+  firestore1.Target_QueryTarget _toProtoTarget() {
+    return firestore1.Target_QueryTarget(
+      parent: _buildProtoParentPath(),
+      structuredQuery: _toStructuredQuery(),
+    );
   }
 
   firestore1.StructuredQuery _toStructuredQuery() {
@@ -1358,6 +1344,47 @@ base class Query<T> {
       structuredQuery.select = _queryOptions.projection!;
     }
 
+    // For limitToLast queries, the structured query has to be translated to a version with
+    // reversed ordered, and flipped startAt/endAt to work properly.
+    if (this._queryOptions.limitType == LimitType.last) {
+      if (!this._queryOptions.hasFieldOrders) {
+        throw ArgumentError(
+          'limitToLast() queries require specifying at least one orderBy() clause.',
+        );
+      }
+
+      structuredQuery.orderBy
+        ..clear()
+        ..addAll(
+          _queryOptions.fieldOrders.map((order) {
+            // Flip the orderBy directions since we want the last results
+            final dir = order.direction == _Direction.descending
+                ? _Direction.ascending
+                : _Direction.descending;
+            return _FieldOrder(fieldPath: order.fieldPath, direction: dir)
+                ._toProto();
+          }),
+        );
+
+      // Swap the cursors to match the now-flipped query ordering.
+      if (_queryOptions.endAt != null) {
+        structuredQuery.startAt = _toCursor(
+          _QueryCursor(
+            values: _queryOptions.endAt!.values,
+            before: !_queryOptions.endAt!.before,
+          ),
+        )!;
+      }
+      if (_queryOptions.startAt != null) {
+        structuredQuery.endAt = _toCursor(
+          _QueryCursor(
+            values: _queryOptions.startAt!.values,
+            before: !_queryOptions.startAt!.before,
+          ),
+        )!;
+      }
+    }
+
     return structuredQuery;
   }
 
@@ -1369,9 +1396,6 @@ base class Query<T> {
         ? firestore1.Cursor(before: true, values: cursor.values)
         : firestore1.Cursor(values: cursor.values);
   }
-
-  // TODO onSnapshot
-  // TODO stream
 
   /// {@macro collection_reference.where}
   Query<T> where(Object path, WhereFilter op, Object? value) {

@@ -7,6 +7,7 @@ import 'package:fixnum/fixnum.dart' as fixnum;
 import 'package:freezed_annotation/freezed_annotation.dart';
 import 'package:googleapis_grpc/google_firestore_v1.dart' as firestore1;
 import 'package:googleapis_grpc/google_protobuf.dart' as google_protobuf;
+import 'package:googleapis_grpc/google_rpc.dart';
 import 'package:googleapis_grpc/google_type.dart' as google_type;
 import 'package:grpc/grpc.dart' as grpc;
 import 'package:rxdart/rxdart.dart';
@@ -315,7 +316,8 @@ class _FirestoreGrpcClient {
   }
 
   Stream<R> v1Stream<R>(
-      Stream<R> Function(firestore1.FirestoreClient client) fn) {
+    Stream<R> Function(firestore1.FirestoreClient client) fn,
+  ) {
     return _run(() => fn(_client));
   }
 }

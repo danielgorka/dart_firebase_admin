@@ -8,10 +8,7 @@ class _QueryWatcher<T> {
     void Function()? onDone,
   }) {
     final documentsTarget = firestore1.Target(
-      query: firestore1.Target_QueryTarget(
-        parent: query._buildProtoParentPath(),
-        structuredQuery: query._toStructuredQuery(),
-      ),
+      query: query._toProtoTarget(),
       readTime: readTime?._toProto().timestampValue,
     );
 
@@ -67,6 +64,16 @@ class _QueryWatcher<T> {
     return wrapper.stream
         .map(
           (response) {
+            if (response.hasTargetChange() &&
+                response.targetChange.hasCause()) {
+              // Handle error
+              throw FirebaseFirestoreAdminException.fromServerError(
+                serverErrorCode:
+                    Code.values[response.targetChange.cause.code].name,
+                message: response.targetChange.cause.message,
+              );
+            }
+
             if (response.hasDocumentChange()) {
               if (response.documentChange.removedTargetIds.isEmpty) {
                 // Add the document to the map
@@ -98,9 +105,11 @@ class _QueryWatcher<T> {
               // Emit update on target change without type
               // We need to sort the documents by the order specified in
               // the query as on update we don't get the order of the documents.
+              wrapper.readTime =
+                  Timestamp._fromProtoTimestamp(response.targetChange.readTime);
               return wrapper.documentMap.values.sorted(
                 (a, b) => query
-                    ._createImplicitOrderBy()
+                    ._createBackendOrderBy()
                     .map((order) => order._compare(a, b))
                     .firstWhere(
                       (comparison) => comparison != 0,
@@ -117,7 +126,7 @@ class _QueryWatcher<T> {
         .map(
           (snapshots) => QuerySnapshot._(
             query: query,
-            readTime: snapshots.lastOrNull?.readTime,
+            readTime: wrapper.readTime,
             docs: snapshots
                 .map(
                   (snapshot) {

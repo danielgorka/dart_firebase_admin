@@ -4,14 +4,12 @@ class _DocumentWatcher<T> {
   _DocumentWatcher({
     required this.firestore,
     required this.document,
-    this.readTime,
     void Function()? onDone,
   }) {
     final documentsTarget = firestore1.Target(
       documents: firestore1.Target_DocumentsTarget(
         documents: [document._formattedName],
       ),
-      readTime: readTime?._toProto().timestampValue,
     );
 
     final request = firestore1.ListenRequest(
@@ -37,7 +35,6 @@ class _DocumentWatcher<T> {
 
   final Firestore firestore;
   final DocumentReference<T> document;
-  final Timestamp? readTime;
 
   late _ListenStreamWrapper _streamWrapper;
 
@@ -48,38 +45,59 @@ class _DocumentWatcher<T> {
     Stream<firestore1.ListenResponse> listenRequestStream,
   ) {
     return listenRequestStream
-        .where(
-          (response) =>
-              response.hasDocumentChange() ||
-              response.hasDocumentRemove() ||
-              response.hasDocumentDelete(),
-        )
         .map(
-          (response) => response.hasDocumentChange()
-              ? DocumentSnapshot._fromDocument(
-                  response.documentChange.document,
-                  null,
-                  firestore,
-                )
-              : DocumentSnapshot._missing(
-                  response.documentDelete.document,
-                  null,
-                  firestore,
-                ),
-        )
-        .map(
-      (snapshot) {
-        // Recreate the DocumentSnapshot with the DocumentReference
-        // containing the original converter.
-        final finalDoc = _DocumentSnapshotBuilder(document)
-          ..fieldsProto = snapshot._fieldsProto
-          ..createTime = snapshot.createTime
-          ..readTime = snapshot.readTime
-          ..updateTime = snapshot.updateTime;
+          (response) {
+            if (response.hasTargetChange() &&
+                response.targetChange.hasCause()) {
+              // Handle error
+              throw FirebaseFirestoreAdminException.fromServerError(
+                serverErrorCode:
+                    Code.values[response.targetChange.cause.code].name,
+                message: response.targetChange.cause.message,
+              );
+            }
 
-        return finalDoc.build();
-      },
-    );
+            if (response.hasDocumentChange()) {
+              return DocumentSnapshot._fromDocument(
+                response.documentChange.document,
+                null,
+                firestore,
+              );
+            }
+
+            if (response.hasDocumentRemove()) {
+              return DocumentSnapshot._missing(
+                response.documentRemove.document,
+                response.documentRemove.readTime,
+                firestore,
+              );
+            }
+
+            if (response.hasDocumentDelete()) {
+              return DocumentSnapshot._missing(
+                response.documentDelete.document,
+                response.documentDelete.readTime,
+                firestore,
+              );
+            }
+
+            return null;
+          },
+        )
+        .whereNotNull()
+        .map(
+          (snapshot) {
+            // Recreate the DocumentSnapshot with the DocumentReference
+            // containing the original converter.
+            final finalDoc = _DocumentSnapshotBuilder(document)
+              ..fieldsProto = snapshot._fieldsProto
+              ..createTime = snapshot.createTime
+              ..readTime = snapshot.readTime
+              ..updateTime = snapshot.updateTime;
+
+            return finalDoc.build();
+          },
+        );
   }
 }
 
@@ -121,6 +139,8 @@ class _ListenStreamWrapper {
   final Map<String, DocumentSnapshot<DocumentData>> _documentMap = {};
 
   Map<String, DocumentSnapshot<DocumentData>> get documentMap => _documentMap;
+
+  Timestamp? readTime;
 
   Stream<firestore1.ListenResponse> get stream =>
       _listenResponseStreamController.stream;
