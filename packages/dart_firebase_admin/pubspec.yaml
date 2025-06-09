@@ -19,7 +19,6 @@ dependencies:
   googleapis_grpc: 1.0.28
   grpc: ^4.0.4
   http: ^1.0.0
-  intl: ^0.19.0
   jose: ^0.3.4
   meta: ^1.9.1
   pem: ^2.0.5
