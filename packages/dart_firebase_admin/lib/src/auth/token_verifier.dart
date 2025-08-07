@@ -315,6 +315,7 @@ class DecodedIdToken {
     required this.picture,
     required this.sub,
     required this.uid,
+    required this.claims,
   });
 
   @internal
@@ -334,6 +335,7 @@ class DecodedIdToken {
       picture: map['picture'] as String?,
       sub: map['sub']! as String,
       uid: map['sub']! as String,
+      claims: Map<String, Object?>.from(map),
     );
   }
 
@@ -408,11 +410,8 @@ class DecodedIdToken {
   /// convenience, and is set as the value of the [`sub`](#sub) property.
   String uid;
 
-  /**
-   * Other arbitrary claims included in the ID token.
-   */
-  // TODO allow any key
-  // [key: string]: any;
+  /// Map of all claims in the decoded ID token.
+  Map<String, Object?> claims;
 }
 
 /// User facing token information related to the Firebase ID token.
