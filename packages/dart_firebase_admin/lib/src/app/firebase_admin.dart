@@ -37,9 +37,9 @@ class FirebaseAdminApp {
     );
   }
 
-  grpc.ServiceAccountAuthenticator? _authenticator;
+  grpc.BaseAuthenticator? _authenticator;
 
-  grpc.ServiceAccountAuthenticator? get authenticator {
+  grpc.BaseAuthenticator get authenticator {
     return _authenticator ??= credential.authenticatorFor(
       [
         auth3.IdentityToolkitApi.cloudPlatformScope,

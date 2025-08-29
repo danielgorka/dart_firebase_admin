@@ -304,7 +304,7 @@ class _FirestoreGrpcClient {
     app.firestoreChannel,
     options: app.isUsingEmulator
         ? grpc.CallOptions(metadata: {'authorization': 'Bearer owner'})
-        : app.authenticator?.toCallOptions,
+        : app.authenticator.toCallOptions,
   );
 
   R _run<R>(R Function() fn) {

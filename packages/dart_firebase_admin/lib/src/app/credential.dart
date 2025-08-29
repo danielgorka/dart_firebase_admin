@@ -131,11 +131,11 @@ class Credential {
   @internal
   final String? serviceAccountJson;
 
-  grpc.ServiceAccountAuthenticator? authenticatorFor(List<String> scopes) =>
+  grpc.BaseAuthenticator authenticatorFor(List<String> scopes) =>
       serviceAccountJson != null
           ? grpc.ServiceAccountAuthenticator(
               serviceAccountJson!,
               scopes,
             )
-          : null;
+          : grpc.ComputeEngineAuthenticator();
 }
