@@ -622,17 +622,23 @@ abstract class _AbstractAuthRequestHandler {
     for (final id in identifiers) {
       switch (id) {
         case UidIdentifier():
-          final localIds = request.localId ?? <String>[];
-          localIds.add(id.uid);
+          request.localId ??= <String>[];
+          request.localId!.add(id.uid);
         case EmailIdentifier():
-          final emails = request.email ?? <String>[];
-          emails.add(id.email);
+          request.email ??= <String>[];
+          request.email!.add(id.email);
         case PhoneIdentifier():
-          final phoneNumbers = request.phoneNumber ?? <String>[];
-          phoneNumbers.add(id.phoneNumber);
+          request.phoneNumber ??= <String>[];
+          request.phoneNumber!.add(id.phoneNumber);
         case ProviderIdentifier():
-          final providerIds = request.federatedUserId ?? <String>[];
-          providerIds.add(id.providerId);
+          request.federatedUserId ??=
+              <v1.GoogleCloudIdentitytoolkitV1FederatedUserIdentifier>[];
+          request.federatedUserId!.add(
+            v1.GoogleCloudIdentitytoolkitV1FederatedUserIdentifier(
+              providerId: id.providerId,
+              rawId: id.providerUid,
+            ),
+          );
       }
     }
 
