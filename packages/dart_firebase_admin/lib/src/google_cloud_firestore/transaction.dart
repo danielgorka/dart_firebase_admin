@@ -169,7 +169,7 @@ class Transaction {
   void update(
     DocumentReference<dynamic> documentRef,
     Map<Object?, Object?> data, {
-    Precondition? precondition,
+    Precondition? precondition = const Precondition.exists(true),
   }) {
     if (_writeBatch == null) {
       throw Exception(readOnlyWriteErrorMsg);

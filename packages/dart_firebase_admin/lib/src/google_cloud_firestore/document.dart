@@ -486,10 +486,10 @@ class _DocumentTransform<T> {
 class Precondition {
   /// Checks that the document exists or not.
   // ignore: avoid_positional_boolean_parameters, cf https://github.com/dart-lang/linter/issues/1638
-  Precondition.exists(bool this._exists) : _lastUpdateTime = null;
+  const Precondition.exists(bool this._exists) : _lastUpdateTime = null;
 
   /// Checks that the document has last been updated at the specified time.
-  Precondition.timestamp(Timestamp this._lastUpdateTime) : _exists = null;
+  const Precondition.timestamp(Timestamp this._lastUpdateTime) : _exists = null;
 
   final bool? _exists;
   final Timestamp? _lastUpdateTime;

@@ -324,7 +324,7 @@ final class DocumentReference<T> implements _Serializable {
   /// argument.
   Future<WriteResult> update(
     Map<Object?, Object?> data, [
-    Precondition? precondition,
+    Precondition? precondition = const Precondition.exists(true),
   ]) async {
     final writeBatch = WriteBatch._(this.firestore)
       ..update(

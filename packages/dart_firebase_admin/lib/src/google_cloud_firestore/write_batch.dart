@@ -58,7 +58,7 @@ class WriteBatch {
     final transform = _DocumentTransform.fromObject(ref, firestoreData);
     transform.validate();
 
-    final precondition = Precondition.exists(false);
+    const precondition = Precondition.exists(false);
 
     firestore1.Write op() {
       final document = DocumentSnapshot._fromObject(ref, firestoreData);
@@ -183,7 +183,7 @@ class WriteBatch {
   void update(
     DocumentReference<Object?> documentRef,
     UpdateMap data, {
-    Precondition? precondition,
+    Precondition? precondition = const Precondition.exists(true),
   }) {
     _update(
       data: data,
@@ -195,12 +195,10 @@ class WriteBatch {
   void _update({
     required UpdateMap data,
     required DocumentReference<Object?> documentRef,
-    required Precondition? precondition,
+    Precondition? precondition = const Precondition.exists(true),
   }) {
     _verifyNotCommited();
     _validateUpdateMap('data', data);
-
-    precondition ??= Precondition.exists(true);
 
     _validateNoConflictingFields('data', data);
 
