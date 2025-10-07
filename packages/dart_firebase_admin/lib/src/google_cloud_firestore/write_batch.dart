@@ -25,11 +25,14 @@ typedef _PendingWriteOp = firestore1.Write Function();
 /// A Firestore WriteBatch that can be used to atomically commit multiple write
 /// operations at once.
 class WriteBatch {
-  WriteBatch._(this.firestore);
+  WriteBatch._(this.firestore) : _backoff = ExponentialBackoff();
 
   final Firestore firestore;
   var _commited = false;
   final _operations = <({String docPath, _PendingWriteOp op})>[];
+  final ExponentialBackoff _backoff;
+
+  static const _maxCommitAttempts = 5;
 
   /// Create a document with the provided object values. This will fail the batch
   /// if a document exists at its location.
@@ -88,16 +91,38 @@ class WriteBatch {
   /// });
   /// ```
   Future<List<WriteResult>> commit([List<int>? transactionId]) async {
-    final response = await _commit(transactionId: transactionId);
+    FirebaseFirestoreAdminException? lastError;
 
-    return [
-      for (final writeResult in response.writeResults)
-        WriteResult._(
-          Timestamp._fromProtoTimestamp(
-            writeResult.updateTime,
-          ),
-        ),
-    ];
+    for (var attempt = 0; attempt < _maxCommitAttempts; attempt++) {
+      try {
+        if (attempt > 0) {
+          await _maybeBackoff(_backoff, lastError);
+        }
+
+        final response = await _commit(transactionId: transactionId);
+
+        return [
+          for (final writeResult in response.writeResults)
+            WriteResult._(
+              Timestamp._fromProtoTimestamp(
+                writeResult.updateTime,
+              ),
+            ),
+        ];
+      } on FirebaseFirestoreAdminException catch (e) {
+        lastError = e;
+
+        if (!_isRetryableTransactionError(e)) {
+          rethrow;
+        }
+        // If retryable and not last attempt, continue to retry
+        if (attempt == _maxCommitAttempts - 1) {
+          rethrow;
+        }
+      }
+    }
+
+    throw Exception('WriteBatch commit max attempts exceeded');
   }
 
   Future<firestore1.CommitResponse> _commit({

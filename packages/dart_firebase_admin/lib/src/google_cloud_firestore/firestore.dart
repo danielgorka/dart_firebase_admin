@@ -59,7 +59,26 @@ class Firestore {
 
   final Map<Object, _DocumentWatcher<dynamic>> _listenStreamCache = {};
 
-  // TODO batch
+  /// Creates a write batch, used for performing multiple writes as a single
+  /// atomic operation. The maximum number of writes allowed in a single WriteBatch
+  /// is 500, but individual Firestore limits may apply.
+  ///
+  /// Returns a [WriteBatch] that can be used to atomically execute multiple writes.
+  ///
+  /// ```dart
+  /// final batch = firestore.batch();
+  ///
+  /// final docRef = firestore.collection('col').doc();
+  /// batch.set(docRef, {'foo': 'bar'});
+  ///
+  /// await batch.commit();
+  /// print('Executed batch.');
+  /// ```
+  // ignore: use_to_and_as_if_applicable
+  WriteBatch batch() {
+    return WriteBatch._(this);
+  }
+
   // TODO bulkWriter
   // TODO bundle
   // TODO getAll
