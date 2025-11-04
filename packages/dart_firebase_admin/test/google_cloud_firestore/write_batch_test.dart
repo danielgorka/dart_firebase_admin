@@ -200,5 +200,160 @@ void main() {
         ),
       );
     });
+
+    test('commit sets a document with merge=true', () async {
+      final docRef = await initializeTest('batch-set-merge');
+
+      // Create initial document
+      await docRef.set({'field1': 'value1', 'field2': 'value2'});
+
+      final batch = firestore.batch();
+      batch.set(docRef, {'field2': 'updated', 'field3': 'new'}, merge: true);
+      await batch.commit();
+
+      final snapshot = await docRef.get();
+      expect(snapshot.data(), {
+        'field1': 'value1',
+        'field2': 'updated',
+        'field3': 'new',
+      });
+    });
+
+    test('commit sets a document with merge=false replaces document', () async {
+      final docRef = await initializeTest('batch-set-no-merge');
+
+      // Create initial document
+      await docRef.set({'field1': 'value1', 'field2': 'value2'});
+
+      final batch = firestore.batch();
+      batch.set(docRef, {'field3': 'new'});
+      await batch.commit();
+
+      final snapshot = await docRef.get();
+      expect(snapshot.data(), {'field3': 'new'});
+    });
+
+    test('commit sets with default merge=false', () async {
+      final docRef = await initializeTest('batch-set-default');
+
+      // Create initial document
+      await docRef.set({'field1': 'value1', 'field2': 'value2'});
+
+      final batch = firestore.batch();
+      batch.set(docRef, {'field3': 'new'});
+      await batch.commit();
+
+      final snapshot = await docRef.get();
+      expect(snapshot.data(), {'field3': 'new'});
+    });
+
+    test('commit creates document with merge=true if not exists', () async {
+      final docRef = await initializeTest('batch-merge-create');
+
+      final batch = firestore.batch();
+      batch.set(docRef, {'field1': 'value1'}, merge: true);
+      await batch.commit();
+
+      final snapshot = await docRef.get();
+      expect(snapshot.exists, true);
+      expect(snapshot.data(), {'field1': 'value1'});
+    });
+
+    test('commit multiple operations with merge', () async {
+      final doc1 = await initializeTest('batch-multi-merge-1');
+      final doc2 = await initializeTest('batch-multi-merge-2');
+      final doc3 = await initializeTest('batch-multi-merge-3');
+
+      await doc1.set({'existing': 'field'});
+      await doc2.set({'existing': 'field'});
+
+      final batch = firestore.batch();
+      batch.set(doc1, {'new': 'field'}, merge: true);
+      batch.set(doc2, {'replaced': 'field'});
+      batch.set(doc3, {'created': 'field'}, merge: true);
+      await batch.commit();
+
+      final snapshot1 = await doc1.get();
+      final snapshot2 = await doc2.get();
+      final snapshot3 = await doc3.get();
+
+      expect(snapshot1.data(), {'existing': 'field', 'new': 'field'});
+      expect(snapshot2.data(), {'replaced': 'field'});
+      expect(snapshot3.data(), {'created': 'field'});
+    });
+
+    test('commit with merge and withConverter', () async {
+      final rawDocRef = await initializeTest('batch-merge-converter');
+
+      final docRef = rawDocRef.withConverter<int>(
+        fromFirestore: (snapshot) => snapshot.data()['value']! as int,
+        toFirestore: (value) => {'value': value},
+      );
+
+      // Create initial document with extra field
+      await rawDocRef.set({'value': 10, 'extra': 'field'});
+
+      final batch = firestore.batch();
+      batch.set(docRef, 20, merge: true);
+      await batch.commit();
+
+      final snapshot = await rawDocRef.get();
+      expect(snapshot.data(), {'value': 20, 'extra': 'field'});
+
+      final converterSnapshot = await docRef.get();
+      expect(converterSnapshot.data(), 20);
+    });
+
+    test('commit with merge preserves fields with transforms', () async {
+      final docRef = await initializeTest('batch-merge-transform');
+
+      await docRef.set({'existing': 'field'});
+
+      final batch = firestore.batch();
+      batch.set(
+        docRef,
+        {
+          'timestamp': FieldValue.serverTimestamp,
+        },
+        merge: true,
+      );
+      await batch.commit();
+
+      final snapshot = await docRef.get();
+      final data = snapshot.data()!;
+
+      expect(data['existing'], 'field');
+      expect(data['timestamp'], isA<Timestamp>());
+    });
+
+    test('commit with mixed operations including merge', () async {
+      final doc1 = await initializeTest('batch-mixed-1');
+      final doc2 = await initializeTest('batch-mixed-2');
+      final doc3 = await initializeTest('batch-mixed-3');
+      final doc4 = await initializeTest('batch-mixed-4');
+
+      await doc2.set({'old': 'value'});
+      await doc3.set({'update': 'me', 'keep': 'this'});
+      await doc4.set({'delete': 'me'});
+
+      final batch = firestore.batch();
+      batch.create(doc1, {'created': 'value'});
+      batch.set(doc2, {'merged': 'value'}, merge: true);
+      batch.update(doc3, {
+        FieldPath(const ['update']): 'updated',
+      });
+      batch.delete(doc4);
+      await batch.commit();
+
+      final snapshot1 = await doc1.get();
+      final snapshot2 = await doc2.get();
+      final snapshot3 = await doc3.get();
+      final snapshot4 = await doc4.get();
+
+      expect(snapshot1.data(), {'created': 'value'});
+      expect(snapshot2.data(), {'old': 'value', 'merged': 'value'});
+      expect(snapshot3.data(), {'update': 'updated', 'keep': 'this'});
+      expect(snapshot4.exists, false);
+    });
   });
 }

@@ -173,7 +173,11 @@ class WriteBatch {
   /// Write to the document referred to by the provided
   /// [DocumentReference]. If the document does not
   /// exist yet, it will be created.
-  void set<T>(DocumentReference<T> documentReference, T data) {
+  void set<T>(
+    DocumentReference<T> documentReference,
+    T data, {
+    bool merge = false,
+  }) {
     final firestoreData = documentReference._converter.toFirestore(data);
 
     _validateDocumentData(
@@ -188,6 +192,14 @@ class WriteBatch {
         _DocumentTransform.fromObject(documentReference, firestoreData);
     transform.validate();
 
+    // If merging, create a mask of the fields to be updated.
+    final documentMask = merge
+        ? _DocumentMask.fromUpdateMap({
+            for (final entry in firestoreData.entries)
+              FieldPath.from(entry.key): entry.value,
+          })
+        : null;
+
     firestore1.Write op() {
       final document =
           DocumentSnapshot._fromObject(documentReference, firestoreData);
@@ -195,6 +207,7 @@ class WriteBatch {
       return document._toWriteProto(
         transform: transform,
         serializer: firestore._serializer,
+        documentMask: documentMask,
       );
     }
 

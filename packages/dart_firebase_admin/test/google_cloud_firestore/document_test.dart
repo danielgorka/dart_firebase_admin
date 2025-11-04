@@ -406,6 +406,534 @@ void main() {
     });
   });
 
+  group('set documents with merge', () {
+    late Firestore firestore;
+
+    setUp(() async => firestore = await createFirestore());
+
+    test('merges fields in existing document', () async {
+      // Create initial document with some fields
+      await firestore.doc('collectionId/mergedoc').set({
+        'existing': 'value',
+        'keep': 'this',
+      });
+
+      // Set with merge=true should merge new fields
+      await firestore.doc('collectionId/mergedoc').set(
+        {
+          'new': 'field',
+        },
+        merge: true,
+      );
+
+      final snapshot = await firestore.doc('collectionId/mergedoc').get();
+      expect(snapshot.data(), {
+        'existing': 'value',
+        'keep': 'this',
+        'new': 'field',
+      });
+    });
+
+    test('overwrites existing fields when merging', () async {
+      // Create initial document
+      await firestore.doc('collectionId/mergeoverwrite').set({
+        'field1': 'original',
+        'field2': 'keep',
+      });
+
+      // Set with merge=true should overwrite field1 but keep field2
+      await firestore.doc('collectionId/mergeoverwrite').set(
+        {
+          'field1': 'updated',
+        },
+        merge: true,
+      );
+
+      final snapshot = await firestore.doc('collectionId/mergeoverwrite').get();
+      expect(snapshot.data(), {
+        'field1': 'updated',
+        'field2': 'keep',
+      });
+    });
+
+    test('creates document if it does not exist with merge=true', () async {
+      // Ensure document doesn't exist
+      await firestore.doc('collectionId/mergenew').delete();
+
+      // Set with merge=true should create the document
+      await firestore.doc('collectionId/mergenew').set(
+        {
+          'foo': 'bar',
+        },
+        merge: true,
+      );
+
+      final snapshot = await firestore.doc('collectionId/mergenew').get();
+      expect(snapshot.exists, isTrue);
+      expect(snapshot.data(), {'foo': 'bar'});
+    });
+
+    test('merges nested fields', () async {
+      // Create initial document with nested structure
+      await firestore.doc('collectionId/mergenested').set({
+        'parent': {
+          'child1': 'value1',
+          'child2': 'value2',
+        },
+        'other': 'field',
+      });
+
+      // Set with merge=true and new nested field
+      await firestore.doc('collectionId/mergenested').set(
+        {
+          'parent': {
+            'child3': 'value3',
+          },
+        },
+        merge: true,
+      );
+
+      final snapshot = await firestore.doc('collectionId/mergenested').get();
+      // Note: merge at top level replaces entire parent object
+      expect(snapshot.data(), {
+        'parent': {
+          'child3': 'value3',
+        },
+        'other': 'field',
+      });
+    });
+
+    test('merge=false replaces entire document', () async {
+      // Create initial document
+      await firestore.doc('collectionId/mergereplace').set({
+        'field1': 'value1',
+        'field2': 'value2',
+      });
+
+      // Set with merge=false should replace entire document
+      await firestore.doc('collectionId/mergereplace').set(
+        {
+          'field3': 'value3',
+        },
+        merge: false,
+      );
+
+      final snapshot = await firestore.doc('collectionId/mergereplace').get();
+      expect(snapshot.data(), {
+        'field3': 'value3',
+      });
+    });
+
+    test('default behavior is merge=false', () async {
+      // Create initial document
+      await firestore.doc('collectionId/mergedefault').set({
+        'field1': 'value1',
+        'field2': 'value2',
+      });
+
+      // Set without merge parameter should replace entire document
+      await firestore.doc('collectionId/mergedefault').set({
+        'field3': 'value3',
+      });
+
+      final snapshot = await firestore.doc('collectionId/mergedefault').get();
+      expect(snapshot.data(), {
+        'field3': 'value3',
+      });
+    });
+
+    test('merges with field transforms', () async {
+      final time = DateTime.now().toUtc().millisecondsSinceEpoch - 5000;
+
+      // Create initial document
+      await firestore.doc('collectionId/mergetransform').set({
+        'existing': 'field',
+      });
+
+      // Set with merge=true and field transform
+      await firestore.doc('collectionId/mergetransform').set(
+        {
+          'timestamp': FieldValue.serverTimestamp,
+        },
+        merge: true,
+      );
+
+      final snapshot = await firestore.doc('collectionId/mergetransform').get();
+      final data = snapshot.data()!;
+
+      expect(data['existing'], 'field');
+      expect(
+        (data['timestamp']! as Timestamp).seconds * 1000,
+        greaterThan(time),
+      );
+    });
+
+    test('merges with nested field transforms', () async {
+      final time = DateTime.now().toUtc().millisecondsSinceEpoch - 5000;
+
+      // Create initial document
+      await firestore.doc('collectionId/mergenestedtransform').set({
+        'existing': 'field',
+      });
+
+      // Set with merge=true and nested field transform
+      await firestore.doc('collectionId/mergenestedtransform').set(
+        {
+          'data': {
+            'timestamp': FieldValue.serverTimestamp,
+          },
+        },
+        merge: true,
+      );
+
+      final snapshot =
+          await firestore.doc('collectionId/mergenestedtransform').get();
+      final data = snapshot.data()!;
+
+      expect(data['existing'], 'field');
+      expect(
+        ((data['data']! as Map)['timestamp']! as Timestamp).seconds * 1000,
+        greaterThan(time),
+      );
+    });
+
+    test('merge with empty object preserves existing fields', () async {
+      // Create initial document
+      await firestore.doc('collectionId/mergeempty').set({
+        'field1': 'value1',
+        'field2': 'value2',
+      });
+
+      // Set empty object with merge=true should preserve all fields
+      await firestore.doc('collectionId/mergeempty').set({}, merge: true);
+
+      final snapshot = await firestore.doc('collectionId/mergeempty').get();
+      expect(snapshot.data(), {
+        'field1': 'value1',
+        'field2': 'value2',
+      });
+    });
+
+    test('merge with multiple fields', () async {
+      // Create initial document
+      await firestore.doc('collectionId/mergemulti').set({
+        'a': 1,
+        'b': 2,
+        'c': 3,
+      });
+
+      // Set with merge=true with multiple fields
+      await firestore.doc('collectionId/mergemulti').set(
+        {
+          'b': 20,
+          'd': 4,
+          'e': 5,
+        },
+        merge: true,
+      );
+
+      final snapshot = await firestore.doc('collectionId/mergemulti').get();
+      expect(snapshot.data(), {
+        'a': 1,
+        'b': 20,
+        'c': 3,
+        'd': 4,
+        'e': 5,
+      });
+    });
+
+    test('returns update time on merge', () async {
+      final time = DateTime.now().toUtc().millisecondsSinceEpoch - 5000;
+
+      await firestore.doc('collectionId/mergetime').set({'foo': 'bar'});
+      final result = await firestore.doc('collectionId/mergetime').set(
+        {
+          'baz': 'qux',
+        },
+        merge: true,
+      );
+
+      expect(
+        result.writeTime.seconds * 1000,
+        greaterThan(time),
+      );
+    });
+  });
+
+  group('set documents with merge and withConverter', () {
+    late Firestore firestore;
+
+    setUp(() async => firestore = await createFirestore());
+
+    test('merges custom objects correctly', () async {
+      // Define a simple custom object
+      final docRef =
+          firestore.doc('collectionId/mergeconverter').withConverter<int>(
+                fromFirestore: (snapshot) => snapshot.data()['value']! as int,
+                toFirestore: (value) => {'value': value},
+              );
+
+      // Create initial document
+      await docRef.set(42);
+
+      // Verify initial value
+      final initialSnapshot = await docRef.get();
+      expect(initialSnapshot.data(), 42);
+
+      // Now set with merge using raw document to add another field
+      await firestore.doc('collectionId/mergeconverter').set(
+        {
+          'other': 'field',
+        },
+        merge: true,
+      );
+
+      // Verify raw document has both fields
+      final rawSnapshot =
+          await firestore.doc('collectionId/mergeconverter').get();
+      expect(rawSnapshot.data(), {
+        'value': 42,
+        'other': 'field',
+      });
+
+      // Update value using converter with merge
+      await docRef.set(100, merge: true);
+
+      // Verify converter still works and other field is preserved
+      final updatedSnapshot = await docRef.get();
+      expect(updatedSnapshot.data(), 100);
+
+      final finalRawSnapshot =
+          await firestore.doc('collectionId/mergeconverter').get();
+      expect(finalRawSnapshot.data(), {
+        'value': 100,
+        'other': 'field',
+      });
+    });
+
+    test('merges complex custom objects', () async {
+      // Define a custom class
+      final docRef = firestore
+          .doc('collectionId/mergecomplexconverter')
+          .withConverter<({String name, int age})>(
+            fromFirestore: (snapshot) {
+              final data = snapshot.data();
+              return (
+                name: data['name']! as String,
+                age: data['age']! as int,
+              );
+            },
+            toFirestore: (value) => {
+              'name': value.name,
+              'age': value.age,
+            },
+          );
+
+      // Create initial document
+      await docRef.set((name: 'Alice', age: 30));
+
+      // Verify initial value
+      final initialSnapshot = await docRef.get();
+      expect(initialSnapshot.data()!.name, 'Alice');
+      expect(initialSnapshot.data()!.age, 30);
+
+      // Add another field using raw document with merge
+      await firestore.doc('collectionId/mergecomplexconverter').set(
+        {
+          'email': 'alice@example.com',
+        },
+        merge: true,
+      );
+
+      // Verify raw document has all fields
+      final rawSnapshot =
+          await firestore.doc('collectionId/mergecomplexconverter').get();
+      expect(rawSnapshot.data(), {
+        'name': 'Alice',
+        'age': 30,
+        'email': 'alice@example.com',
+      });
+
+      // Update using converter with merge
+      await docRef.set((name: 'Alice Updated', age: 31), merge: true);
+
+      // Verify email field is preserved
+      final finalRawSnapshot =
+          await firestore.doc('collectionId/mergecomplexconverter').get();
+      expect(finalRawSnapshot.data(), {
+        'name': 'Alice Updated',
+        'age': 31,
+        'email': 'alice@example.com',
+      });
+    });
+
+    test('creates document with converter if it does not exist', () async {
+      final docRef =
+          firestore.doc('collectionId/mergeconverternew').withConverter<int>(
+                fromFirestore: (snapshot) => snapshot.data()['value']! as int,
+                toFirestore: (value) => {'value': value},
+              );
+
+      // Delete to ensure it doesn't exist
+      await firestore.doc('collectionId/mergeconverternew').delete();
+
+      // Set with merge should create the document
+      await docRef.set(42, merge: true);
+
+      final snapshot = await docRef.get();
+      expect(snapshot.exists, isTrue);
+      expect(snapshot.data(), 42);
+    });
+
+    test('merge with converter preserves fields not in converter', () async {
+      final docRef = firestore
+          .doc('collectionId/mergeconverterpreserve')
+          .withConverter<int>(
+            fromFirestore: (snapshot) => snapshot.data()['count']! as int,
+            toFirestore: (value) => {'count': value},
+          );
+
+      // Create initial document with raw data
+      await firestore.doc('collectionId/mergeconverterpreserve').set({
+        'count': 0,
+        'metadata': {'created': 'today'},
+        'status': 'active',
+      });
+
+      // Update count using converter with merge
+      await docRef.set(5, merge: true);
+
+      // Verify other fields are preserved
+      final rawSnapshot =
+          await firestore.doc('collectionId/mergeconverterpreserve').get();
+      expect(rawSnapshot.data(), {
+        'count': 5,
+        'metadata': {'created': 'today'},
+        'status': 'active',
+      });
+
+      // Verify converter still works
+      final converterSnapshot = await docRef.get();
+      expect(converterSnapshot.data(), 5);
+    });
+
+    test('merge=false with converter replaces document', () async {
+      final docRef = firestore
+          .doc('collectionId/mergeconverterreplace')
+          .withConverter<int>(
+            fromFirestore: (snapshot) => snapshot.data()['value']! as int,
+            toFirestore: (value) => {'value': value},
+          );
+
+      // Create initial document with multiple fields
+      await firestore.doc('collectionId/mergeconverterreplace').set({
+        'value': 10,
+        'extra': 'field',
+      });
+
+      // Set with converter and merge=false should replace entire document
+      await docRef.set(20, merge: false);
+
+      // Verify only the converter's fields remain
+      final rawSnapshot =
+          await firestore.doc('collectionId/mergeconverterreplace').get();
+      expect(rawSnapshot.data(), {'value': 20});
+    });
+
+    test('default behavior with converter is merge=false', () async {
+      final docRef = firestore
+          .doc('collectionId/mergeconverterdefault')
+          .withConverter<int>(
+            fromFirestore: (snapshot) => snapshot.data()['value']! as int,
+            toFirestore: (value) => {'value': value},
+          );
+
+      // Create initial document with multiple fields
+      await firestore.doc('collectionId/mergeconverterdefault').set({
+        'value': 10,
+        'extra': 'field',
+      });
+
+      // Set without merge parameter should replace entire document
+      await docRef.set(20);
+
+      // Verify only the converter's fields remain
+      final rawSnapshot =
+          await firestore.doc('collectionId/mergeconverterdefault').get();
+      expect(rawSnapshot.data(), {'value': 20});
+    });
+
+    test('merge with converter and field transforms', () async {
+      final time = DateTime.now().toUtc().millisecondsSinceEpoch - 5000;
+
+      final docRef = firestore
+          .doc('collectionId/mergeconvertertransform')
+          .withConverter<Map<String, Object?>>(
+            fromFirestore: (snapshot) =>
+                snapshot.data()['data']! as Map<String, Object?>,
+            toFirestore: (value) => {'data': value},
+          );
+
+      // Create initial document
+      await firestore.doc('collectionId/mergeconvertertransform').set({
+        'existing': 'field',
+      });
+
+      // Set with merge and field transform
+      await docRef.set(
+        {
+          'timestamp': FieldValue.serverTimestamp,
+        },
+        merge: true,
+      );
+
+      // Verify both fields exist
+      final rawSnapshot =
+          await firestore.doc('collectionId/mergeconvertertransform').get();
+      final data = rawSnapshot.data()!;
+
+      expect(data['existing'], 'field');
+      expect(data['data'], isA<Map<String, Object?>>());
+      expect(
+        ((data['data']! as Map)['timestamp']! as Timestamp).seconds * 1000,
+        greaterThan(time),
+      );
+    });
+
+    test('merge with list converter', () async {
+      final docRef = firestore
+          .doc('collectionId/mergelistconverter')
+          .withConverter<List<String>>(
+            fromFirestore: (snapshot) {
+              final data = snapshot.data()['items'];
+              return (data! as List).cast<String>();
+            },
+            toFirestore: (value) => {'items': value},
+          );
+
+      // Create initial document
+      await firestore.doc('collectionId/mergelistconverter').set({
+        'items': ['item1', 'item2'],
+        'count': 2,
+      });
+
+      // Update list with merge
+      await docRef.set(['item1', 'item2', 'item3'], merge: true);
+
+      // Verify count is preserved
+      final rawSnapshot =
+          await firestore.doc('collectionId/mergelistconverter').get();
+      expect(rawSnapshot.data(), {
+        'items': ['item1', 'item2', 'item3'],
+        'count': 2,
+      });
+
+      // Verify converter works
+      final converterSnapshot = await docRef.get();
+      expect(converterSnapshot.data(), ['item1', 'item2', 'item3']);
+    });
+  });
+
   group('create document', () {
     late Firestore firestore;
 

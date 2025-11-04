@@ -270,7 +270,7 @@ void main() {
         () async {
       final DocumentReference<Map<String, dynamic>> docRef =
           await initializeTest('simpleDocument');
-      final precondition = Precondition.exists(true);
+      const precondition = Precondition.exists(true);
       expect(
         () async {
           await firestore.runTransaction(
