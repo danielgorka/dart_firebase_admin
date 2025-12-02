@@ -1233,7 +1233,8 @@ base class Query<T> {
             )
               // Recreate the QueryDocumentSnapshot with the DocumentReference
               // containing the original converter.
-              ..fieldsProto = firestore1.MapValue(fields: document.fields)
+              ..fieldsProto =
+                  firestore1.MapValue(fields: document.fields.entries)
               ..readTime = snapshot.readTime
               ..createTime = snapshot.createTime
               ..updateTime = snapshot.updateTime;

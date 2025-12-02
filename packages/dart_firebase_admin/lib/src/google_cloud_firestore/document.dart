@@ -101,7 +101,7 @@ class DocumentSnapshot<T> {
 
           if (nestedValue != null) {
             target[key] = firestore1.Value(
-              mapValue: firestore1.MapValue(fields: nestedValue),
+              mapValue: firestore1.MapValue(fields: nestedValue.entries),
             );
             return target;
           } else {
@@ -117,7 +117,7 @@ class DocumentSnapshot<T> {
               value: value,
               path: path,
               pos: pos + 1,
-            ),
+            )?.entries,
           ),
         );
         return target;
@@ -132,7 +132,7 @@ class DocumentSnapshot<T> {
 
     return DocumentSnapshot._(
       ref: ref,
-      fieldsProto: firestore1.MapValue(fields: res),
+      fieldsProto: firestore1.MapValue(fields: res.entries),
       readTime: null,
       createTime: null,
       updateTime: null,
@@ -151,7 +151,7 @@ class DocumentSnapshot<T> {
     );
 
     final builder = _DocumentSnapshotBuilder(ref)
-      ..fieldsProto = firestore1.MapValue(fields: document.fields)
+      ..fieldsProto = firestore1.MapValue(fields: document.fields.entries)
       ..createTime = document.createTime.let(Timestamp._fromProtoTimestamp)
       ..readTime = readTime.let(Timestamp._fromProtoTimestamp)
       ..updateTime = document.updateTime.let(Timestamp._fromProtoTimestamp);
@@ -299,7 +299,7 @@ class DocumentSnapshot<T> {
     return firestore1.Write(
       update: firestore1.Document(
         name: ref._formattedName,
-        fields: _fieldsProto?.fields,
+        fields: _fieldsProto?.fields.entries,
       ),
       updateTransforms: transform.transforms.isNotEmpty
           ? transform.toProto(serializer)

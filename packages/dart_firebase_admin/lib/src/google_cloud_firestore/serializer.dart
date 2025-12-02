@@ -26,9 +26,10 @@ class _Serializer {
   /// Encodes a Dart object into the Firestore 'Fields' representation.
   firestore1.MapValue encodeFields(DocumentData obj) {
     return firestore1.MapValue(
-      fields: obj.map((key, value) {
-        return MapEntry(key, encodeValue(value));
-      }).whereValueNotNull(),
+      fields: obj
+          .map((key, value) => MapEntry(key, encodeValue(value)))
+          .whereValueNotNull()
+          .entries,
     );
   }
 
