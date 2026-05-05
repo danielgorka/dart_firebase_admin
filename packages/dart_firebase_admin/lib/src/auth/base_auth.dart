@@ -362,7 +362,7 @@ abstract class _BaseAuth {
       isEmulator: isEmulator,
     );
     // Whether to check if the token was revoked.
-    if (checkRevoked || isEmulator) {
+    if (checkRevoked) {
       return _verifyDecodedJWTNotRevokedOrDisabled(
         decodedIdToken,
         AuthClientErrorCode.idTokenRevoked,
@@ -414,7 +414,7 @@ abstract class _BaseAuth {
       isEmulator: isEmulator,
     );
 
-    if (checkRevoked || isEmulator) {
+    if (checkRevoked) {
       return _verifyDecodedJWTNotRevokedOrDisabled(
         decodedIdToken,
         AuthClientErrorCode.sessionCookieRevoked,
