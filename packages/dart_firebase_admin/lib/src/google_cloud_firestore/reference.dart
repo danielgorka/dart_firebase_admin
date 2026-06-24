@@ -90,22 +90,34 @@ final class CollectionReference<T> extends Query<T> {
       firestore._databaseId,
     );
 
-    final request = firestore1.ListDocumentsRequest(
-      parent: parentPath._formattedName,
-      collectionId: id,
-      // Setting `pageSize` to an arbitrarily large value lets the backend cap
-      // the page size (currently to 300). Note that the backend rejects
-      // MAX_INT32 (b/146883794).
-      pageSize: math.pow(2, 16 - 1).toInt(),
-      showMissing: true,
-    );
+    final documents = await firestore._client.v1((client) async {
+      final allDocuments = <firestore1.Document>[];
+      var pageToken = '';
 
-    final response = await firestore._client.v1((client) {
-      return client.listDocuments(request);
+      do {
+        final request = firestore1.ListDocumentsRequest(
+          parent: parentPath._formattedName,
+          collectionId: id,
+          // Setting `pageSize` to an arbitrarily large value lets the backend cap
+          // the page size (currently to 300). Note that the backend rejects
+          // MAX_INT32 (b/146883794).
+          pageSize: math.pow(2, 16 - 1).toInt(),
+          showMissing: true,
+        );
+        if (pageToken.isNotEmpty) {
+          request.pageToken = pageToken;
+        }
+
+        final response = await client.listDocuments(request);
+        allDocuments.addAll(response.documents);
+        pageToken = response.nextPageToken;
+      } while (pageToken.isNotEmpty);
+
+      return allDocuments;
     });
 
     return [
-      for (final document in response.documents)
+      for (final document in documents)
         doc(
           // ignore: unnecessary_null_checks, we don't want to inadvertently obtain a new document
           _QualifiedResourcePath.fromSlashSeparatedString(document.name).id!,
@@ -214,17 +226,26 @@ final class DocumentReference<T> implements _Serializable {
   /// ```
   Future<List<CollectionReference<DocumentData>>> listCollections() {
     return this.firestore._client.v1((client) async {
-      final request = firestore1.ListCollectionIdsRequest(
-        parent: this._formattedName,
-        // Setting `pageSize` to an arbitrarily large value lets the backend cap
-        // the page size (currently to 300). Note that the backend rejects
-        // MAX_INT32 (b/146883794).
-        pageSize: (math.pow(2, 16) - 1).toInt(),
-      );
+      final ids = <String>[];
+      var pageToken = '';
 
-      final result = await client.listCollectionIds(request);
+      do {
+        final request = firestore1.ListCollectionIdsRequest(
+          parent: this._formattedName,
+          // Setting `pageSize` to an arbitrarily large value lets the backend cap
+          // the page size (currently to 300). Note that the backend rejects
+          // MAX_INT32 (b/146883794).
+          pageSize: (math.pow(2, 16) - 1).toInt(),
+        );
+        if (pageToken.isNotEmpty) {
+          request.pageToken = pageToken;
+        }
 
-      final ids = result.collectionIds;
+        final result = await client.listCollectionIds(request);
+        ids.addAll(result.collectionIds);
+        pageToken = result.nextPageToken;
+      } while (pageToken.isNotEmpty);
+
       ids.sort((a, b) => a.compareTo(b));
 
       return [

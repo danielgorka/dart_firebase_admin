@@ -105,6 +105,26 @@ void main() {
       expect(documents, unorderedEquals([a, b]));
     });
 
+    test('listDocuments() paginates past the 300 document page limit',
+        () async {
+      final collection = firestore.collection('listDocumentsPagination');
+
+      final batch = firestore.batch();
+      final expectedRefs = <DocumentReference<DocumentData>>[];
+      for (var i = 0; i < 301; i++) {
+        final docId = 'doc_${i.toString().padLeft(4, '0')}';
+        final ref = collection.doc(docId);
+        expectedRefs.add(ref);
+        batch.set(ref, {'index': i});
+      }
+      await batch.commit();
+
+      final documents = await collection.listDocuments();
+
+      expect(documents, hasLength(301));
+      expect(documents, unorderedEquals(expectedRefs));
+    });
+
     test('override equal', () async {
       final coll1 = firestore.collection('coll1');
       final coll1Equals = firestore.collection('coll1');
