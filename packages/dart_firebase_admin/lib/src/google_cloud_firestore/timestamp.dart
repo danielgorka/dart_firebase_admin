@@ -11,7 +11,7 @@ part of 'firestore.dart';
 ///
 /// For more information, see [the reference timestamp definition](https://github.com/google/protobuf/blob/master/src/google/protobuf/timestamp.proto)
 @immutable
-final class Timestamp implements _Serializable {
+final class Timestamp implements _Serializable, Comparable<Timestamp> {
   Timestamp({required this.seconds, required this.nanoseconds}) {
     const minSeconds = -62135596800;
     const maxSeconds = 253402300799;
@@ -109,6 +109,7 @@ final class Timestamp implements _Serializable {
     );
   }
 
+  static const _secondsToNanos = 1000000000;
   static const _msToNanos = 1000000;
   static const _usToNanos = 1000;
 
@@ -138,5 +139,11 @@ final class Timestamp implements _Serializable {
   @override
   String toString() {
     return 'Timestamp(seconds=$seconds, nanoseconds=$nanoseconds)';
+  }
+
+  @override
+  int compareTo(Timestamp other) {
+    return (seconds * _secondsToNanos + nanoseconds)
+        .compareTo(other.seconds * _secondsToNanos + other.nanoseconds);
   }
 }
