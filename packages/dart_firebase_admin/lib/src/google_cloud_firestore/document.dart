@@ -445,7 +445,7 @@ class _DocumentTransform<T> {
         for (final entry in val.entries) {
           encode(
             entry.value,
-            path._append(entry.key.toString()),
+            path._appendPath(FieldPath([entry.key.toString()])),
             allowTransforms: allowTransforms,
           );
         }
@@ -524,6 +524,49 @@ class _DocumentMask {
         fieldPaths.add(entry.key);
       }
     }
+
+    return _DocumentMask(fieldPaths);
+  }
+
+  /// Creates a document mask with the field names of a document object.
+  factory _DocumentMask.fromObject(DocumentData data) {
+    final fieldPaths = <FieldPath>[];
+
+    void extractFieldPaths(
+      Map<Object?, Object?> currentData, [
+      FieldPath? currentPath,
+    ]) {
+      var isEmpty = true;
+
+      for (final entry in currentData.entries) {
+        isEmpty = false;
+
+        // We don't split on dots since fromObject is called with
+        // DocumentData.
+        final childSegment = FieldPath([entry.key.toString()]);
+        final childPath = currentPath == null
+            ? childSegment
+            : currentPath._appendPath(childSegment);
+        final value = entry.value;
+
+        if (value is _FieldTransform) {
+          if (value.includeInDocumentMask) {
+            fieldPaths.add(childPath);
+          }
+        } else if (value is Map<Object?, Object?>) {
+          extractFieldPaths(value, childPath);
+        } else {
+          fieldPaths.add(childPath);
+        }
+      }
+
+      // Add a field path for an explicitly updated empty map.
+      if (currentPath != null && isEmpty) {
+        fieldPaths.add(currentPath);
+      }
+    }
+
+    extractFieldPaths(data);
 
     return _DocumentMask(fieldPaths);
   }

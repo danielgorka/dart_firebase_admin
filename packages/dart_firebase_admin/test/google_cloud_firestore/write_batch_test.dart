@@ -355,5 +355,239 @@ void main() {
       expect(snapshot3.data(), {'update': 'updated', 'keep': 'this'});
       expect(snapshot4.exists, false);
     });
+
+    group('set with merge', () {
+      test('merges nested maps instead of replacing them', () async {
+        final docRef = await initializeTest('batch-merge-nested');
+        await docRef.set({
+          'notifications': {
+            'n1': {'read': true, 'title': 'first'},
+            'n2': {'read': false, 'title': 'second'},
+          },
+          'other': 'field',
+        });
+
+        final batch = firestore.batch();
+        batch.set(
+          docRef,
+          {
+            'notifications': {
+              'n2': {'read': true},
+              'n3': {'read': false, 'title': 'third'},
+            },
+          },
+          merge: true,
+        );
+        await batch.commit();
+
+        final snapshot = await docRef.get();
+        expect(snapshot.data(), {
+          'notifications': {
+            'n1': {'read': true, 'title': 'first'},
+            'n2': {'read': true, 'title': 'second'},
+            'n3': {'read': false, 'title': 'third'},
+          },
+          'other': 'field',
+        });
+      });
+
+      test('creates a missing document with nested data', () async {
+        final docRef = await initializeTest('batch-merge-nested-create');
+
+        final batch = firestore.batch();
+        batch.set(
+          docRef,
+          {
+            'notifications': {
+              'n1': {'read': false},
+            },
+          },
+          merge: true,
+        );
+        await batch.commit();
+
+        final snapshot = await docRef.get();
+        expect(snapshot.data(), {
+          'notifications': {
+            'n1': {'read': false},
+          },
+        });
+      });
+
+      test("doesn't split top-level keys on dots", () async {
+        final docRef = await initializeTest('batch-merge-dots');
+        await docRef.set({
+          'a': {'b': 'nested'},
+        });
+
+        final batch = firestore.batch();
+        batch.set(docRef, {'a.b': 'literal'}, merge: true);
+        await batch.commit();
+
+        final snapshot = await docRef.get();
+        expect(snapshot.data(), {
+          'a': {'b': 'nested'},
+          'a.b': 'literal',
+        });
+      });
+
+      test("doesn't split nested keys on dots", () async {
+        final docRef = await initializeTest('batch-merge-nested-dots');
+        await docRef.set({
+          'notifications': {
+            'user@example.com': {'read': false},
+            'keep': 'me',
+          },
+        });
+
+        final batch = firestore.batch();
+        batch.set(
+          docRef,
+          {
+            'notifications': {
+              'user@example.com': {'read': true},
+              'other.user@example.com': {'read': false},
+            },
+          },
+          merge: true,
+        );
+        await batch.commit();
+
+        final snapshot = await docRef.get();
+        expect(snapshot.data(), {
+          'notifications': {
+            'user@example.com': {'read': true},
+            'other.user@example.com': {'read': false},
+            'keep': 'me',
+          },
+        });
+      });
+
+      test('supports keys that require escaping', () async {
+        final docRef = await initializeTest('batch-merge-escaping');
+        await docRef.set({'keep': 'me'});
+
+        final batch = firestore.batch();
+        batch.set(
+          docRef,
+          {
+            'a`b': 1,
+            r'c\d': 2,
+            'map': {'e`f.g': 3},
+          },
+          merge: true,
+        );
+        await batch.commit();
+
+        final snapshot = await docRef.get();
+        expect(snapshot.data(), {
+          'keep': 'me',
+          'a`b': 1,
+          r'c\d': 2,
+          'map': {'e`f.g': 3},
+        });
+      });
+
+      test('replaces a field with an explicitly set empty map', () async {
+        final docRef = await initializeTest('batch-merge-empty-map');
+        await docRef.set({
+          'a': {'b': 'c'},
+          'keep': 'me',
+        });
+
+        final batch = firestore.batch();
+        batch.set(docRef, {'a': <String, Object?>{}}, merge: true);
+        await batch.commit();
+
+        final snapshot = await docRef.get();
+        expect(snapshot.data(), {
+          'a': <String, Object?>{},
+          'keep': 'me',
+        });
+      });
+
+      test('applies nested field transforms without replacing siblings',
+          () async {
+        final docRef = await initializeTest('batch-merge-transforms');
+        await docRef.set({
+          'stats': {'count': 1, 'keep': 'me'},
+        });
+
+        final batch = firestore.batch();
+        batch.set(
+          docRef,
+          {
+            'stats': {
+              'count': const FieldValue.increment(2),
+              'updated.at': FieldValue.serverTimestamp,
+            },
+          },
+          merge: true,
+        );
+        await batch.commit();
+
+        final data = (await docRef.get()).data()!;
+        final stats = data['stats']! as Map<String, Object?>;
+        expect(stats['count'], 3);
+        expect(stats['keep'], 'me');
+        expect(stats['updated.at'], isA<Timestamp>());
+        expect(stats.keys, unorderedEquals(['count', 'keep', 'updated.at']));
+      });
+
+      test('supports nested FieldValue.delete', () async {
+        final docRef = await initializeTest('batch-merge-delete');
+        await docRef.set({
+          'notifications': {
+            'n1': {'read': true},
+            'n2': {'read': false},
+          },
+          'removed': 'value',
+        });
+
+        final batch = firestore.batch();
+        batch.set(
+          docRef,
+          {
+            'notifications': {'n1': FieldValue.delete},
+            'removed': FieldValue.delete,
+          },
+          merge: true,
+        );
+        await batch.commit();
+
+        final snapshot = await docRef.get();
+        expect(snapshot.data(), {
+          'notifications': {
+            'n2': {'read': false},
+          },
+        });
+      });
+
+      test('DocumentReference.set uses the same nested merge', () async {
+        final docRef = await initializeTest('ref-merge-nested');
+        await docRef.set({
+          'notifications': {
+            'n1': {'read': false},
+          },
+        });
+
+        await docRef.set(
+          {
+            'notifications': {
+              'n2': {'read': false},
+            },
+          },
+          merge: true,
+        );
+
+        final snapshot = await docRef.get();
+        expect(snapshot.data(), {
+          'notifications': {
+            'n1': {'read': false},
+            'n2': {'read': false},
+          },
+        });
+      });
+    });
   });
 }

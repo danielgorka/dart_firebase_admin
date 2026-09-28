@@ -515,9 +515,11 @@ void main() {
       );
 
       final snapshot = await firestore.doc('collectionId/mergenested').get();
-      // Note: merge at top level replaces entire parent object
+      // Nested maps are merged field by field, like in the Node SDK.
       expect(snapshot.data(), {
         'parent': {
+          'child1': 'value1',
+          'child2': 'value2',
           'child3': 'value3',
         },
         'other': 'field',

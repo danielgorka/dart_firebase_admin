@@ -316,7 +316,7 @@ class FieldPath extends _Path<FieldPath> {
     final regex = RegExp(r'^[_a-zA-Z][_a-zA-Z0-9]*$');
     return segments.map((e) {
       if (regex.hasMatch(e)) return e;
-      return '`${e.replaceAll(r'\', r'\\').replaceAll('`', r'\')}`';
+      return '`${e.replaceAll(r'\', r'\\').replaceAll('`', r'\`')}`';
     }).join('.');
   }
 

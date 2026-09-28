@@ -183,7 +183,7 @@ class WriteBatch {
     _validateDocumentData(
       'data',
       firestoreData,
-      allowDeletes: false,
+      allowDeletes: merge,
     );
 
     _verifyNotCommited();
@@ -192,13 +192,8 @@ class WriteBatch {
         _DocumentTransform.fromObject(documentReference, firestoreData);
     transform.validate();
 
-    // If merging, create a mask of the fields to be updated.
-    final documentMask = merge
-        ? _DocumentMask.fromUpdateMap({
-            for (final entry in firestoreData.entries)
-              FieldPath.from(entry.key): entry.value,
-          })
-        : null;
+    // If merging, create a mask of the (nested) fields to be updated.
+    final documentMask = merge ? _DocumentMask.fromObject(firestoreData) : null;
 
     firestore1.Write op() {
       final document =
