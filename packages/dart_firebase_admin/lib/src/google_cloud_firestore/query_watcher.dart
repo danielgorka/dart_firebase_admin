@@ -61,6 +61,10 @@ class _QueryWatcher<T> {
   Stream<QuerySnapshot<T>> _mapQuerySnapshotStream(
     _ListenStreamWrapper wrapper,
   ) {
+    // Documents of the previously emitted snapshot, used to compute docChanges.
+    var previousDocs = <DocumentSnapshot<DocumentData>>[];
+    var hasEmitted = false;
+
     return wrapper.stream
         .map(
           (response) {
@@ -72,6 +76,13 @@ class _QueryWatcher<T> {
                     Code.values[response.targetChange.cause.code].name,
                 message: response.targetChange.cause.message,
               );
+            }
+
+            if (response.hasTargetChange() &&
+                response.targetChange.targetChangeType ==
+                    firestore1.TargetChange_TargetChangeType.RESET) {
+              // The backend will resend the full result set.
+              wrapper.documentMap.clear();
             }
 
             if (response.hasDocumentChange()) {
@@ -123,34 +134,132 @@ class _QueryWatcher<T> {
           },
         )
         .whereNotNull()
-        .map(
-          (snapshots) => QuerySnapshot._(
-            query: query,
-            readTime: wrapper.readTime,
-            docs: snapshots
-                .map(
-                  (snapshot) {
-                    // Recreate the DocumentSnapshot with the DocumentReference
-                    // containing the original converter.
-                    final finalDoc = _DocumentSnapshotBuilder(
-                      snapshot.ref.withConverter<T>(
-                        fromFirestore:
-                            query._queryOptions.converter.fromFirestore,
-                        toFirestore: query._queryOptions.converter.toFirestore,
-                      ),
-                    )
-                      ..fieldsProto = snapshot._fieldsProto
-                      ..createTime = snapshot.createTime
-                      ..readTime = snapshot.readTime
-                      ..updateTime = snapshot.updateTime;
+        .map((snapshots) {
+          final changes = _computeChanges(previousDocs, snapshots);
+          previousDocs = snapshots;
 
-                    return finalDoc.build();
-                  },
-                )
-                .cast<QueryDocumentSnapshot<T>>()
-                .toList(),
-          ),
+          // Like the official SDKs, only emit the first snapshot and then
+          // snapshots that actually contain changes.
+          if (hasEmitted && changes.isEmpty) return null;
+          hasEmitted = true;
+
+          return (snapshots, changes);
+        })
+        .whereNotNull()
+        .map(
+          (result) {
+            final (snapshots, changes) = result;
+
+            // Recreate the DocumentSnapshot with the DocumentReference
+            // containing the original converter.
+            QueryDocumentSnapshot<T> convert(
+              DocumentSnapshot<DocumentData> snapshot,
+            ) {
+              final finalDoc = _DocumentSnapshotBuilder(
+                snapshot.ref.withConverter<T>(
+                  fromFirestore: query._queryOptions.converter.fromFirestore,
+                  toFirestore: query._queryOptions.converter.toFirestore,
+                ),
+              )
+                ..fieldsProto = snapshot._fieldsProto
+                ..createTime = snapshot.createTime
+                ..readTime = snapshot.readTime
+                ..updateTime = snapshot.updateTime;
+
+              return finalDoc.build() as QueryDocumentSnapshot<T>;
+            }
+
+            return QuerySnapshot._(
+              query: query,
+              readTime: wrapper.readTime,
+              docs: snapshots.map(convert).toList(),
+              docChanges: [
+                for (final change in changes)
+                  DocumentChange<T>._(
+                    type: change.type,
+                    oldIndex: change.oldIndex,
+                    newIndex: change.newIndex,
+                    doc: convert(change.doc),
+                  ),
+              ],
+            );
+          },
         )
         .distinct();
   }
+
+  int _compareDocs(
+    DocumentSnapshot<DocumentData> a,
+    DocumentSnapshot<DocumentData> b,
+  ) {
+    for (final order in query._createBackendOrderBy()) {
+      final comparison = order._compare(a, b);
+      if (comparison != 0) return comparison;
+    }
+    return 0;
+  }
+
+  /// Computes the changes between two ordered snapshots, the same way the
+  /// official SDKs do: removals first (using old indexes), then additions
+  /// and modifications (using indexes in the progressively updated set).
+  List<_RawDocumentChange> _computeChanges(
+    List<DocumentSnapshot<DocumentData>> previous,
+    List<DocumentSnapshot<DocumentData>> next,
+  ) {
+    final previousByPath = {for (final doc in previous) doc.ref.path: doc};
+    final nextByPath = {for (final doc in next) doc.ref.path: doc};
+
+    final current = [...previous];
+    final changes = <_RawDocumentChange>[];
+
+    int indexOfPath(String path) =>
+        current.indexWhere((doc) => doc.ref.path == path);
+
+    int insert(DocumentSnapshot<DocumentData> doc) {
+      var index = current.indexWhere((other) => _compareDocs(doc, other) < 0);
+      if (index == -1) index = current.length;
+      current.insert(index, doc);
+      return index;
+    }
+
+    for (final doc in previous) {
+      if (nextByPath.containsKey(doc.ref.path)) continue;
+      final oldIndex = indexOfPath(doc.ref.path);
+      current.removeAt(oldIndex);
+      changes.add(
+        _RawDocumentChange(DocumentChangeType.removed, doc, oldIndex, -1),
+      );
+    }
+
+    for (final doc in next) {
+      final old = previousByPath[doc.ref.path];
+      if (old == null) {
+        changes.add(
+          _RawDocumentChange(DocumentChangeType.added, doc, -1, insert(doc)),
+        );
+      } else if (old.updateTime != doc.updateTime) {
+        final oldIndex = indexOfPath(doc.ref.path);
+        current.removeAt(oldIndex);
+        changes.add(
+          _RawDocumentChange(
+            DocumentChangeType.modified,
+            doc,
+            oldIndex,
+            insert(doc),
+          ),
+        );
+      }
+    }
+
+    return changes;
+  }
+}
+
+class _RawDocumentChange {
+  _RawDocumentChange(this.type, this.doc, this.oldIndex, this.newIndex);
+
+  final DocumentChangeType type;
+  final DocumentSnapshot<DocumentData> doc;
+  final int oldIndex;
+  final int newIndex;
 }

@@ -1807,7 +1807,17 @@ class QuerySnapshot<T> {
     required this.docs,
     required this.query,
     required this.readTime,
-  });
+    List<DocumentChange<T>>? docChanges,
+  }) : docChanges = docChanges ??
+            [
+              for (final (index, doc) in docs.indexed)
+                DocumentChange<T>._(
+                  type: DocumentChangeType.added,
+                  oldIndex: -1,
+                  newIndex: index,
+                  doc: doc,
+                ),
+            ];
 
   /// The query used in order to get this [QuerySnapshot].
   final Query<T> query;
@@ -1820,17 +1830,10 @@ class QuerySnapshot<T> {
 
   /// Returns a list of the documents changes since the last snapshot.
   ///
-  /// If this is the first snapshot, all documents will be in the list as added
-  /// changes.
-  late final List<DocumentChange<T>> docChanges = [
-    for (final (index, doc) in docs.indexed)
-      DocumentChange<T>._(
-        type: DocumentChangeType.added,
-        oldIndex: -1,
-        newIndex: index,
-        doc: doc,
-      ),
-  ];
+  /// If this is the first snapshot (or the result of a one-off `get()`), all
+  /// documents will be in the list as added changes. Otherwise only documents
+  /// that were added, removed or modified are included.
+  final List<DocumentChange<T>> docChanges;
 
   @override
   bool operator ==(Object other) {
