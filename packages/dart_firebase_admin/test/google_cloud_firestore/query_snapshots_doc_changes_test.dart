@@ -173,6 +173,55 @@ void main() {
       expect(snapshot.docChanges.map((c) => c.doc.id), isNot(contains('c')));
     });
 
+    test('docChanges applied to the previous docs give the new docs', () async {
+      final collection = firestore.collection('docChangesReplay');
+      String id(int i) => 'd${'$i'.padLeft(3, '0')}';
+      final setup = firestore.batch();
+      for (var i = 0; i < 200; i++) {
+        setup.set(collection.doc(id(i)), {'v': i});
+      }
+      await setup.commit();
+
+      final queue = _SnapshotQueue(collection.orderBy('v').snapshots());
+      final first = await queue.next();
+      final docs = first.docs.map((d) => d.id).toList();
+
+      // Removals, moves in both directions, edits in place and additions
+      // spread over the whole result set.
+      final batch = firestore.batch();
+      for (var i = 0; i < 200; i++) {
+        final doc = collection.doc(id(i));
+        if (i % 7 == 0) {
+          batch.delete(doc);
+        } else if (i % 11 == 3) {
+          batch.update(doc, {
+            FieldPath(const ['v']): 199 - i + 0.5
+          });
+        } else if (i % 13 == 5) {
+          batch.update(doc, {
+            FieldPath(const ['extra']): true
+          });
+        }
+      }
+      for (var i = 0; i < 20; i++) {
+        batch.set(collection.doc('n$i'), {'v': i * 10 + 0.25});
+      }
+      await batch.commit();
+      final snapshot = await queue.next();
+
+      for (final change in snapshot.docChanges) {
+        if (change.oldIndex != -1) {
+          expect(docs.removeAt(change.oldIndex), change.doc.id);
+        }
+        if (change.newIndex != -1) docs.insert(change.newIndex, change.doc.id);
+      }
+      expect(docs, snapshot.docs.map((d) => d.id));
+      expect(
+        snapshot.docs.map((d) => d.id),
+        (await collection.orderBy('v').get()).docs.map((d) => d.id),
+      );
+    });
+
     group('with where() filter', () {
       test('document entering the filter is reported as added', () async {
         final collection = firestore.collection('docChangesWhereEnter');
